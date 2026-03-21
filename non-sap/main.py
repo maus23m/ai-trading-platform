@@ -1,4 +1,4 @@
-# Non-SAP backend — ai-trading-platform
+# Non-SAP backend — ai-trading-platform v2
 from fastapi import FastAPI
 
 app = FastAPI()

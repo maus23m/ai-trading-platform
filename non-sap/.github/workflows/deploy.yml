@@ -1,4 +1,4 @@
-yamlname: Deploy to Cloud Run
+name: Deploy to Cloud Run
 
 on:
   push:

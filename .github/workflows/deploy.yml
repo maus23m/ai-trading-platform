@@ -21,3 +21,6 @@ jobs:
           service: non-sap-backend
           region: europe-west2
           source: ./non-sap
+          env_vars: |
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}

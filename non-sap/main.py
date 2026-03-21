@@ -10,19 +10,3 @@ def root():
 @app.get("/health")
 def health():
     return {"healthy": True}
-```
-
-5. Click **Commit changes → Commit changes**
-
----
-
-## Step 3 — Create requirements.txt
-
-Still inside `non-sap/`:
-
-1. Click **Add file → Create new file**
-2. Filename: `requirements.txt`
-3. Paste:
-```
-fastapi
-uvicorn

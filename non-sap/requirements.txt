@@ -3,3 +3,7 @@ uvicorn
 supabase
 alpaca-py
 pytz
+langchain
+langchain-anthropic
+langgraph
+langsmith

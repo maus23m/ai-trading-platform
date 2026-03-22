@@ -71,15 +71,22 @@ class AgentRequest(BaseModel):
 
 @app.post("/run-agent")
 def run_agent_endpoint(request: AgentRequest):
-    result = run_agent(
-        goal=request.goal,
-        min_win_rate=request.min_win_rate,
-        max_drawdown=request.max_drawdown
-    )
-    return {
-        "termination_reason": result["termination_reason"],
-        "iterations": result["iteration"],
-        "constraints_met": result["constraints_met"],
-        "best_result": result["best_result"],
-        "all_results": result["results"]
-    }
+    try:
+        result = run_agent(
+            goal=request.goal,
+            min_win_rate=request.min_win_rate,
+            max_drawdown=request.max_drawdown
+        )
+        return {
+            "termination_reason": result["termination_reason"],
+            "iterations": result["iteration"],
+            "constraints_met": result["constraints_met"],
+            "best_result": result["best_result"],
+            "all_results": result["results"]
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "error": str(e),
+            "detail": traceback.format_exc()
+        }

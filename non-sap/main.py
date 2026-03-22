@@ -3,12 +3,13 @@ import os
 from fastapi import FastAPI
 from supabase import create_client
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from datetime import datetime
+import pytz
+from pydantic import BaseModel
+from agent import run_agent
 
 app = FastAPI()
 
@@ -56,9 +57,29 @@ def get_bars(symbol: str):
     request = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=TimeFrame.Day,
-        start=datetime(2024, 1, 1),
-        end=datetime(2024, 12, 31)
+        start=datetime(2024, 1, 1, tzinfo=pytz.UTC),
+        end=datetime(2024, 12, 31, tzinfo=pytz.UTC)
     )
     bars = data_client.get_stock_bars(request)
     df = bars.df
     return {"symbol": symbol, "bars": len(df), "data": df.reset_index().to_dict(orient="records")}
+
+class AgentRequest(BaseModel):
+    goal: str
+    min_win_rate: float = 0.5
+    max_drawdown: float = 0.2
+
+@app.post("/run-agent")
+def run_agent_endpoint(request: AgentRequest):
+    result = run_agent(
+        goal=request.goal,
+        min_win_rate=request.min_win_rate,
+        max_drawdown=request.max_drawdown
+    )
+    return {
+        "termination_reason": result["termination_reason"],
+        "iterations": result["iteration"],
+        "constraints_met": result["constraints_met"],
+        "best_result": result["best_result"],
+        "all_results": result["results"]
+    }

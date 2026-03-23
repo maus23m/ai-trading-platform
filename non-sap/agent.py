@@ -44,6 +44,7 @@ class BacktestState(TypedDict):
     risk_score: float
     live_trading_enabled: bool
     best_result: dict
+    supabase_error: str
 
 # Node 1 — Planner
 def planner(state: BacktestState) -> BacktestState:

@@ -217,10 +217,11 @@ def reporter(state: BacktestState) -> BacktestState:
             "constraints_met": state["constraints_met"],
             "termination_reason": reason
         }).execute()
-    except Exception as e:
+except Exception as e:
         print(f"Supabase save error: {e}")
+        return {**state, "termination_reason": reason, "supabase_error": str(e)}
 
-    return {**state, "termination_reason": reason}
+    return {**state, "termination_reason": reason, "supabase_error": None}
 ```
 
 Commit it and wait for green deploy.

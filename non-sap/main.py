@@ -1,4 +1,4 @@
-# Non-SAP backend — ai-trading-platform v4
+# Non-SAP backend — ai-trading-platform v5
 import os
 from fastapi import FastAPI
 from supabase import create_client

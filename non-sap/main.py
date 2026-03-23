@@ -82,7 +82,8 @@ def run_agent_endpoint(request: AgentRequest):
             "iterations": result["iteration"],
             "constraints_met": result["constraints_met"],
             "best_result": result["best_result"],
-            "all_results": result["results"]
+            "all_results": result["results"],
+            "supabase_error": result.get("supabase_error", None)
         }
     except Exception as e:
         import traceback

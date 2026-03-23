@@ -189,6 +189,6 @@ def place_trade(request: TradeRequest):
             "side": str(order.side),
             "status": str(order.status),
             "paper": True
-        }
+                }
     except Exception as e:
         return {"error": str(e)}

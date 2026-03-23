@@ -186,6 +186,9 @@ def evaluator(state: BacktestState) -> BacktestState:
 
 # Node 4 — Reporter
 def reporter(state: BacktestState) -> BacktestState:
+    from supabase import create_client
+    import os
+
     if state["constraints_met"]:
         reason = "success"
     elif state["iteration"] >= state["max_iterations"]:
@@ -193,7 +196,38 @@ def reporter(state: BacktestState) -> BacktestState:
     else:
         reason = "unknown"
 
+    # Save to Supabase
+    try:
+        supabase = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_KEY"]
+        )
+        best = state.get("best_result", {})
+        supabase.table("backtest_runs").insert({
+            "goal": state["goal"],
+            "iteration": state["iteration"],
+            "parameters": {
+                "symbol": best.get("symbol"),
+                "sma_short": best.get("sma_short"),
+                "sma_long": best.get("sma_long")
+            },
+            "total_return": best.get("total_return", 0),
+            "max_drawdown": best.get("max_drawdown", 0),
+            "win_rate": best.get("win_rate", 0),
+            "constraints_met": state["constraints_met"],
+            "termination_reason": reason
+        }).execute()
+    except Exception as e:
+        print(f"Supabase save error: {e}")
+
     return {**state, "termination_reason": reason}
+```
+
+Commit it and wait for green deploy.
+
+Then run the agent again from `/docs` with the same goal. After it completes check:
+```
+https://non-sap-backend-909023162073.europe-west2.run.app/runs
 
 # Routing logic
 def should_continue(state: BacktestState) -> str:

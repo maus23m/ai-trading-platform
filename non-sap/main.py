@@ -1,6 +1,9 @@
-# Non-SAP backend — ai-trading-platform v5
+# Non-SAP backend — ai-trading-platform v6
 import os
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
@@ -15,33 +18,53 @@ from agent import run_agent
 
 app = FastAPI()
 
+# CORS — allows dashboard to call this API from any origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 supabase = create_client(
     os.environ["SUPABASE_URL"],
     os.environ["SUPABASE_KEY"]
 )
-
 trading_client = TradingClient(
     os.environ["ALPACA_API_KEY"],
     os.environ["ALPACA_SECRET_KEY"],
     paper=True
 )
-
 data_client = StockHistoricalDataClient(
     os.environ["ALPACA_API_KEY"],
     os.environ["ALPACA_SECRET_KEY"]
 )
 
+
+# ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+@app.get("/dashboard", include_in_schema=False)
+def serve_dashboard():
+    """Serve the trading dashboard HTML — open this URL in your browser."""
+    return FileResponse("dashboard.html", media_type="text/html")
+
+
+# ─── HEALTH ──────────────────────────────────────────────────────────────────
+
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Non-SAP backend running"}
+    return {"status": "ok", "message": "Non-SAP backend running", "dashboard": "/dashboard"}
 
 @app.get("/health")
 def health():
     return {"healthy": True}
 
+
+# ─── DATA ────────────────────────────────────────────────────────────────────
+
 @app.get("/runs")
 def get_runs():
-    result = supabase.table("backtest_runs").select("*").execute()
+    result = supabase.table("backtest_runs").select("*").order("id", desc=False).execute()
     return result.data
 
 @app.get("/account")
@@ -70,15 +93,15 @@ def get_bars(symbol: str):
         "data": df.reset_index().to_dict(orient="records")
     }
 
+
+# ─── AGENT ───────────────────────────────────────────────────────────────────
+
 class AgentRequest(BaseModel):
     goal: str
     min_win_rate: float = 0.5
     max_drawdown: float = 0.2
-
-class TradeRequest(BaseModel):
-    symbol: str
-    qty: int
-    side: str
+    auto_trade: bool = True      # if True and constraints met, place trade automatically
+    auto_trade_qty: int = 1      # shares to buy when auto-trading
 
 @app.post("/run-agent")
 def run_agent_endpoint(request: AgentRequest):
@@ -88,20 +111,64 @@ def run_agent_endpoint(request: AgentRequest):
             min_win_rate=request.min_win_rate,
             max_drawdown=request.max_drawdown
         )
+
+        auto_trade_result = None
+
+        # ── AUTO-TRADE: if strategy passed constraints, place trade automatically ──
+        if request.auto_trade and result.get("constraints_met"):
+            best = result.get("best_result", {})
+            symbol = best.get("symbol", "AAPL")
+            try:
+                order = trading_client.submit_order(
+                    MarketOrderRequest(
+                        symbol=symbol,
+                        qty=request.auto_trade_qty,
+                        side=OrderSide.BUY,
+                        time_in_force=TimeInForce.DAY
+                    )
+                )
+                auto_trade_result = {
+                    "triggered": True,
+                    "symbol": symbol,
+                    "qty": request.auto_trade_qty,
+                    "order_id": str(order.id),
+                    "status": str(order.status)
+                }
+            except Exception as e:
+                auto_trade_result = {
+                    "triggered": False,
+                    "error": str(e)
+                }
+        else:
+            auto_trade_result = {
+                "triggered": False,
+                "reason": "constraints not met" if not result.get("constraints_met") else "auto_trade disabled"
+            }
+
         return {
             "termination_reason": result["termination_reason"],
             "iterations": result["iteration"],
             "constraints_met": result["constraints_met"],
             "best_result": result["best_result"],
             "all_results": result["results"],
-            "supabase_error": result.get("supabase_error", "")
+            "supabase_error": result.get("supabase_error", ""),
+            "auto_trade": auto_trade_result
         }
+
     except Exception as e:
         import traceback
         return {
             "error": str(e),
             "detail": traceback.format_exc()
         }
+
+
+# ─── MANUAL TRADE ────────────────────────────────────────────────────────────
+
+class TradeRequest(BaseModel):
+    symbol: str
+    qty: int
+    side: str
 
 @app.post("/trade")
 def place_trade(request: TradeRequest):

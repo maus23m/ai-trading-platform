@@ -3,6 +3,8 @@ import os
 from fastapi import FastAPI
 from supabase import create_client
 from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -62,12 +64,21 @@ def get_bars(symbol: str):
     )
     bars = data_client.get_stock_bars(request)
     df = bars.df
-    return {"symbol": symbol, "bars": len(df), "data": df.reset_index().to_dict(orient="records")}
+    return {
+        "symbol": symbol,
+        "bars": len(df),
+        "data": df.reset_index().to_dict(orient="records")
+    }
 
 class AgentRequest(BaseModel):
     goal: str
     min_win_rate: float = 0.5
     max_drawdown: float = 0.2
+
+class TradeRequest(BaseModel):
+    symbol: str
+    qty: int
+    side: str
 
 @app.post("/run-agent")
 def run_agent_endpoint(request: AgentRequest):
@@ -83,7 +94,7 @@ def run_agent_endpoint(request: AgentRequest):
             "constraints_met": result["constraints_met"],
             "best_result": result["best_result"],
             "all_results": result["results"],
-            "supabase_error": result.get("supabase_error", None)
+            "supabase_error": result.get("supabase_error", "")
         }
     except Exception as e:
         import traceback
@@ -91,3 +102,26 @@ def run_agent_endpoint(request: AgentRequest):
             "error": str(e),
             "detail": traceback.format_exc()
         }
+
+@app.post("/trade")
+def place_trade(request: TradeRequest):
+    try:
+        side = OrderSide.BUY if request.side.lower() == "buy" else OrderSide.SELL
+        order = trading_client.submit_order(
+            MarketOrderRequest(
+                symbol=request.symbol,
+                qty=request.qty,
+                side=side,
+                time_in_force=TimeInForce.DAY
+            )
+        )
+        return {
+            "order_id": str(order.id),
+            "symbol": order.symbol,
+            "qty": order.qty,
+            "side": str(order.side),
+            "status": str(order.status),
+            "paper": True
+        }
+    except Exception as e:
+        return {"error": str(e)}

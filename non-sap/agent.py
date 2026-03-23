@@ -7,13 +7,10 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from datetime import datetime
 import pytz
+from supabase import create_client
 
 # Models
 planner_llm = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",
-    api_key=os.environ["ANTHROPIC_API_KEY"]
-)
-evaluator_llm = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
     api_key=os.environ["ANTHROPIC_API_KEY"]
 )
@@ -24,23 +21,19 @@ data_client = StockHistoricalDataClient(
     os.environ["ALPACA_SECRET_KEY"]
 )
 
-# State definition — the shared notebook
+# State definition
 class BacktestState(TypedDict):
-    # Core
     goal: str
     iteration: int
     max_iterations: int
     results: list
     constraints_met: bool
     termination_reason: str
-    # Parameters
     symbol: str
     sma_short: int
     sma_long: int
-    # Constraints
     min_win_rate: float
     max_drawdown: float
-    # Future-proofing
     risk_score: float
     live_trading_enabled: bool
     best_result: dict
@@ -187,9 +180,6 @@ def evaluator(state: BacktestState) -> BacktestState:
 
 # Node 4 — Reporter
 def reporter(state: BacktestState) -> BacktestState:
-    from supabase import create_client
-    import os
-
     if state["constraints_met"]:
         reason = "success"
     elif state["iteration"] >= state["max_iterations"]:
@@ -197,7 +187,6 @@ def reporter(state: BacktestState) -> BacktestState:
     else:
         reason = "unknown"
 
-    # Save to Supabase
     try:
         supabase = create_client(
             os.environ["SUPABASE_URL"],
@@ -218,18 +207,9 @@ def reporter(state: BacktestState) -> BacktestState:
             "constraints_met": state["constraints_met"],
             "termination_reason": reason
         }).execute()
-except Exception as e:
-        print(f"Supabase save error: {e}")
+        return {**state, "termination_reason": reason, "supabase_error": ""}
+    except Exception as e:
         return {**state, "termination_reason": reason, "supabase_error": str(e)}
-
-    return {**state, "termination_reason": reason, "supabase_error": None}
-```
-
-Commit it and wait for green deploy.
-
-Then run the agent again from `/docs` with the same goal. After it completes check:
-```
-https://non-sap-backend-909023162073.europe-west2.run.app/runs
 
 # Routing logic
 def should_continue(state: BacktestState) -> str:
@@ -242,24 +222,20 @@ def should_continue(state: BacktestState) -> str:
 # Build the graph
 def build_graph():
     graph = StateGraph(BacktestState)
-
     graph.add_node("planner", planner)
     graph.add_node("backtest", backtest)
     graph.add_node("evaluator", evaluator)
     graph.add_node("reporter", reporter)
-
     graph.set_entry_point("planner")
     graph.add_edge("planner", "backtest")
     graph.add_edge("backtest", "evaluator")
     graph.add_conditional_edges("evaluator", should_continue)
     graph.add_edge("reporter", END)
-
     return graph.compile()
 
 # Run function
 def run_agent(goal: str, min_win_rate: float = 0.5, max_drawdown: float = 0.2):
     app = build_graph()
-
     initial_state = BacktestState(
         goal=goal,
         iteration=0,
@@ -274,12 +250,11 @@ def run_agent(goal: str, min_win_rate: float = 0.5, max_drawdown: float = 0.2):
         max_drawdown=max_drawdown,
         risk_score=0.0,
         live_trading_enabled=False,
-        best_result={}
+        best_result={},
+        supabase_error=""
     )
-
     final_state = app.invoke(
         initial_state,
         config={"recursion_limit": 10}
     )
-
     return final_state

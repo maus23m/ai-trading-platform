@@ -21,6 +21,7 @@ jobs:
           service: non-sap-backend
           region: europe-west2
           source: ./non-sap
+          flags: --allow-unauthenticated
           env_vars: |
             SUPABASE_URL=${{ secrets.SUPABASE_URL }}
             SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}

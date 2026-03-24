@@ -36,10 +36,10 @@ def architect(state: DebateState) -> DebateState:
     if is_first:
         prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
 Topic: {state['topic']}
-Context: {state['context'] or 'S&P 500 systematic momentum strategy, three-layer scoring system.'}
+Context: {state['context'] or 'S&P 500 systematic trading strategy.'}
 
 Propose a specific design decision. Name the exact indicators, parameters, or rules you recommend.
-Be specific — name indicators by their exact names (e.g. KAMA, MACD, OBV, RSI, FRAMA, ROC, MFI).
+Propose from first principles. Name indicators by their standard industry names so they can be identified and tested precisely.
 
 Structure your response as:
 PROPOSAL: [your specific proposal in 1-2 sentences naming exact indicators/rules]
@@ -60,7 +60,7 @@ The Critic challenged your proposal with:
 Based on the actual backtest data, respond to the Critic.
 If the data supports your proposal, defend it with the numbers.
 If the data contradicts your proposal, refine it — name specific alternative indicators to test.
-Always name indicators by exact name (KAMA, FRAMA, MACD, ROC, OBV, MFI, RSI, etc.).
+Name any indicators by their standard industry names so they can be identified and tested precisely.
 
 Structure your response as:
 REFINED PROPOSAL: [updated or defended proposal with specific indicator names]

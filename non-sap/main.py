@@ -15,6 +15,7 @@ from datetime import datetime
 import pytz
 from pydantic import BaseModel
 from agent import run_agent
+from debate import run_debate
 
 app = FastAPI()
 
@@ -49,7 +50,7 @@ def serve_dashboard():
     return FileResponse("dashboard.html", media_type="text/html")
 
 
-# ─── HEALTH ──────────────────────────────────────────────────────────────────
+# ─── HEALTH & CONFIG ─────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
@@ -58,6 +59,16 @@ def root():
 @app.get("/health")
 def health():
     return {"healthy": True}
+
+@app.get("/config", include_in_schema=False)
+def get_config():
+    """Serve public config to the dashboard — reads from Cloud Run env vars.
+    Only exposes the Supabase anon key (safe to expose) and URL.
+    Never exposes Alpaca or Anthropic keys."""
+    return {
+        "supabase_url": os.environ.get("SUPABASE_URL", ""),
+        "supabase_anon_key": os.environ.get("SUPABASE_KEY", "")
+    }
 
 
 # ─── DATA ────────────────────────────────────────────────────────────────────
@@ -189,6 +200,35 @@ def place_trade(request: TradeRequest):
             "side": str(order.side),
             "status": str(order.status),
             "paper": True
-                }
+        }
     except Exception as e:
         return {"error": str(e)}
+
+
+# ─── DEBATE ──────────────────────────────────────────────────────────────────
+
+@app.get("/debate", include_in_schema=False)
+def serve_debate():
+    """Serve the dual-agent debate tool — open this URL in your browser."""
+    return FileResponse("debate.html", media_type="text/html")
+
+class DebateRequest(BaseModel):
+    topic: str
+    context: str = ""
+    max_rounds: int = 3
+
+@app.post("/run-debate")
+def run_debate_endpoint(request: DebateRequest):
+    try:
+        result = run_debate(
+            topic=request.topic,
+            context=request.context,
+            max_rounds=max(1, min(10, request.max_rounds))
+        )
+        return result
+    except Exception as e:
+        import traceback
+        return {
+            "error": str(e),
+            "detail": traceback.format_exc()
+        }

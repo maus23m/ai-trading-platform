@@ -1,11 +1,12 @@
-# debate.py — Dual-agent debate tool
-# Architect vs Critic debate on trading strategy design decisions
-# Plugs into existing LangGraph framework as a standalone graph
+# debate.py — Dual-agent debate tool v2
+# Architect proposes → indicator tool runs automatically → Critic challenges on real data
+# Fully autonomous — no human input needed between rounds
 
 import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
 from langchain_anthropic import ChatAnthropic
+from indicator_tester import test_indicators_from_text
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
@@ -15,49 +16,56 @@ llm = ChatAnthropic(
 # ─── STATE ────────────────────────────────────────────────────────────────────
 
 class DebateState(TypedDict):
-    topic: str                  # what we are debating
-    context: str                # optional background context
-    max_rounds: int             # adjustable — default 3
-    round: int                  # current round number
-    history: List[dict]         # list of {role, content} per round
-    architect_position: str     # current architect proposal
-    critic_objections: str      # current critic objections
-    consensus_reached: bool     # judge decision
-    final_verdict: str          # judge summary
-    decision: str               # final agreed decision
+    topic: str
+    context: str
+    max_rounds: int
+    round: int
+    history: List[dict]
+    architect_position: str
+    backtest_results: str       # injected automatically after each architect turn
+    critic_objections: str
+    consensus_reached: bool
+    final_verdict: str
+    decision: str
 
 # ─── NODE 1 — ARCHITECT ───────────────────────────────────────────────────────
 
 def architect(state: DebateState) -> DebateState:
-    is_first_round = state["round"] == 0
+    is_first = state["round"] == 0
 
-    if is_first_round:
+    if is_first:
         prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
-Your job is to propose a clear, well-reasoned design decision on the following topic.
-
 Topic: {state['topic']}
-Context: {state['context'] or 'No additional context provided.'}
+Context: {state['context'] or 'S&P 500 systematic momentum strategy, three-layer scoring system.'}
 
-Propose your design decision. Be specific and justify each choice with logic or evidence.
+Propose a specific design decision. Name the exact indicators, parameters, or rules you recommend.
+Be specific — name indicators by their exact names (e.g. KAMA, MACD, OBV, RSI, FRAMA, ROC, MFI).
+
 Structure your response as:
-PROPOSAL: [your specific proposal in 1-2 sentences]
-REASONING: [3-5 bullet points justifying this approach]
+PROPOSAL: [your specific proposal in 1-2 sentences naming exact indicators/rules]
+REASONING: [3-5 bullet points justifying each choice]
 EXPECTED OUTCOME: [what this achieves for the strategy]"""
     else:
-        last_objections = state["critic_objections"]
         prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
 Topic: {state['topic']}
 Round: {state['round']} of {state['max_rounds']}
 
-Your previous proposal was challenged by the Critic with these objections:
-{last_objections}
+Your previous proposal was tested with real data. Here are the backtest results:
 
-Respond to each objection specifically. Either defend your original proposal with stronger evidence,
-or refine it to address valid concerns. Do not abandon your position without good reason.
+{state['backtest_results']}
+
+The Critic challenged your proposal with:
+{state['critic_objections']}
+
+Based on the actual backtest data, respond to the Critic.
+If the data supports your proposal, defend it with the numbers.
+If the data contradicts your proposal, refine it — name specific alternative indicators to test.
+Always name indicators by exact name (KAMA, FRAMA, MACD, ROC, OBV, MFI, RSI, etc.).
 
 Structure your response as:
-REFINED PROPOSAL: [your updated or defended proposal]
-RESPONSES TO OBJECTIONS: [address each objection point by point]
+REFINED PROPOSAL: [updated or defended proposal with specific indicator names]
+DATA RESPONSE: [how the backtest results support or change your position]
+RESPONSES TO OBJECTIONS: [address each objection using the data]
 POSITION: [MAINTAINED / REFINED — and why]"""
 
     response = llm.invoke(prompt)
@@ -71,35 +79,58 @@ POSITION: [MAINTAINED / REFINED — and why]"""
 
     return {**state, "architect_position": position, "history": new_history}
 
-# ─── NODE 2 — CRITIC ──────────────────────────────────────────────────────────
+# ─── NODE 2 — INDICATOR TOOL (automatic) ─────────────────────────────────────
+
+def run_indicator_tool(state: DebateState) -> DebateState:
+    """
+    Automatically called after every architect turn.
+    Extracts indicator names from architect's proposal,
+    runs backtests, injects results into state.
+    """
+    results = test_indicators_from_text(
+        architect_text=state["architect_position"],
+        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],  # 5 symbols for speed
+        start_year=2020,
+        end_year=2024
+    )
+
+    new_history = state["history"] + [{
+        "role": "Indicator Tool",
+        "round": state["round"] + 1,
+        "content": results
+    }]
+
+    return {**state, "backtest_results": results, "history": new_history}
+
+# ─── NODE 3 — CRITIC ──────────────────────────────────────────────────────────
 
 def critic(state: DebateState) -> DebateState:
     prompt = f"""You are the Critic reviewing a proposed trading strategy design decision.
-Your job is to stress-test the Architect's proposal and find weaknesses.
-
 Topic: {state['topic']}
 Round: {state['round'] + 1} of {state['max_rounds']}
 
-Architect's current proposal:
+Architect's proposal:
 {state['architect_position']}
 
-Debate history so far:
-{_format_history(state['history'][:-1])}
+ACTUAL BACKTEST RESULTS for the proposed indicators:
+{state['backtest_results']}
 
-Critically evaluate this proposal. Look for:
-- Overfitting or curve-fitting risks
-- Data snooping or look-ahead bias
-- Unrealistic assumptions
-- Missing edge cases
-- Better alternatives that were not considered
-- Logical inconsistencies
+Use the backtest data to challenge or validate the Architect's proposal.
+Look for:
+- Indicators with low IC (< 0.05) — weak predictive power
+- Indicators with negative Sharpe — destroys value
+- Win rates below 50% — coin-flip or worse
+- High drawdowns — unacceptable risk
+- Better alternatives in the same group that scored higher
+- Overfitting concerns — too few trades, suspiciously good numbers
 
-If the proposal is genuinely strong and previous objections have been addressed well,
-you may concede on specific points. Be intellectually honest.
+If the data strongly supports the proposal, concede on those points.
+Be intellectually honest — data beats opinion.
 
 Structure your response as:
-OBJECTIONS: [numbered list of specific challenges]
-CONCESSIONS: [any points where the Architect is correct]
+DATA ANALYSIS: [what the backtest numbers actually show]
+OBJECTIONS: [numbered list — only raise objections supported by the data]
+CONCESSIONS: [points where the data validates the Architect]
 VERDICT: [CHALLENGED / PARTIALLY SATISFIED / SATISFIED]"""
 
     response = llm.invoke(prompt)
@@ -118,41 +149,42 @@ VERDICT: [CHALLENGED / PARTIALLY SATISFIED / SATISFIED]"""
         "round": state["round"] + 1
     }
 
-# ─── NODE 3 — JUDGE ───────────────────────────────────────────────────────────
+# ─── NODE 4 — JUDGE ───────────────────────────────────────────────────────────
 
 def judge(state: DebateState) -> DebateState:
     prompt = f"""You are an independent Judge evaluating a strategy design debate.
 Topic: {state['topic']}
 Rounds completed: {state['round']} of {state['max_rounds']}
 
-Full debate transcript:
+Full debate transcript including backtest results:
 {_format_history(state['history'])}
 
-Based on the full debate:
-1. Has a defensible consensus been reached?
-2. What is the final recommended decision?
-3. What risks or caveats remain?
+Based on the full debate and the actual backtest data:
+1. Which indicators are justified by the data?
+2. Which should be rejected and why?
+3. What is the final recommended indicator stack?
 
 Structure your response as:
 CONSENSUS: [YES / NO / PARTIAL]
-FINAL DECISION: [the specific design decision to implement]
-RATIONALE: [why this is the right decision based on the debate]
-REMAINING RISKS: [what to monitor or validate going forward]
+FINAL DECISION: [exact indicator stack to implement — name each indicator]
+DATA JUSTIFICATION: [which backtest metrics support this decision]
+REJECTED INDICATORS: [what was tested and failed and why]
+REMAINING RISKS: [what needs further validation]
 CONFIDENCE: [HIGH / MEDIUM / LOW]"""
 
     response = llm.invoke(prompt)
     verdict = response.content
 
-    # Check if consensus reached
-    consensus = "YES" in verdict.upper().split("CONSENSUS:")[1][:20] if "CONSENSUS:" in verdict.upper() else False
+    consensus = False
+    if "CONSENSUS:" in verdict.upper():
+        after = verdict.upper().split("CONSENSUS:")[1][:30]
+        consensus = "YES" in after
 
-    # Extract final decision
     decision = ""
     if "FINAL DECISION:" in verdict.upper():
-        parts = verdict.upper().split("FINAL DECISION:")
-        if len(parts) > 1:
-            decision = verdict.split(verdict.upper().split("FINAL DECISION:")[0])[-1]
-            decision = decision.split("FINAL DECISION:")[-1].split("\n")[0].strip()
+        idx = verdict.upper().find("FINAL DECISION:")
+        rest = verdict[idx + len("FINAL DECISION:"):].strip()
+        decision = rest.split("\n")[0].strip()
 
     return {
         **state,
@@ -166,8 +198,6 @@ CONFIDENCE: [HIGH / MEDIUM / LOW]"""
 def should_continue(state: DebateState) -> str:
     if state["round"] >= state["max_rounds"]:
         return "judge"
-    if state["consensus_reached"]:
-        return "judge"
     return "architect"
 
 # ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -178,7 +208,7 @@ def _format_history(history: List[dict]) -> str:
     lines = []
     for entry in history:
         lines.append(f"[Round {entry['round']} — {entry['role']}]")
-        lines.append(entry['content'])
+        lines.append(entry["content"])
         lines.append("")
     return "\n".join(lines)
 
@@ -187,14 +217,16 @@ def _format_history(history: List[dict]) -> str:
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
-    graph.add_node("architect", architect)
-    graph.add_node("critic", critic)
-    graph.add_node("judge", judge)
+    graph.add_node("architect",           architect)
+    graph.add_node("indicator_tool",      run_indicator_tool)
+    graph.add_node("critic",              critic)
+    graph.add_node("judge",               judge)
 
     graph.set_entry_point("architect")
-    graph.add_edge("architect", "critic")
+    graph.add_edge("architect",      "indicator_tool")   # tool always runs after architect
+    graph.add_edge("indicator_tool", "critic")           # critic always sees real data
     graph.add_conditional_edges("critic", should_continue)
-    graph.add_edge("judge", END)
+    graph.add_edge("judge",          END)
 
     return graph.compile()
 
@@ -204,28 +236,29 @@ def run_debate(topic: str, context: str = "", max_rounds: int = 3) -> dict:
     app = build_debate_graph()
 
     initial_state: DebateState = {
-        "topic": topic,
-        "context": context,
-        "max_rounds": max_rounds,
-        "round": 0,
-        "history": [],
+        "topic":              topic,
+        "context":            context,
+        "max_rounds":         max_rounds,
+        "round":              0,
+        "history":            [],
         "architect_position": "",
-        "critic_objections": "",
-        "consensus_reached": False,
-        "final_verdict": "",
-        "decision": ""
+        "backtest_results":   "",
+        "critic_objections":  "",
+        "consensus_reached":  False,
+        "final_verdict":      "",
+        "decision":           ""
     }
 
     final_state = app.invoke(
         initial_state,
-        config={"recursion_limit": 50}
+        config={"recursion_limit": 60}
     )
 
     return {
-        "topic": final_state["topic"],
-        "rounds_completed": final_state["round"],
+        "topic":             final_state["topic"],
+        "rounds_completed":  final_state["round"],
         "consensus_reached": final_state["consensus_reached"],
-        "final_verdict": final_state["final_verdict"],
-        "decision": final_state["decision"],
-        "history": final_state["history"]
+        "final_verdict":     final_state["final_verdict"],
+        "decision":          final_state["decision"],
+        "history":           final_state["history"]
     }

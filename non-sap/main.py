@@ -16,6 +16,8 @@ import pytz
 from pydantic import BaseModel
 from agent import run_agent
 from debate import run_debate
+from indicator_tester import run_indicator_comparison
+from backtester import run_walkforward_from_text
 
 app = FastAPI()
 
@@ -232,3 +234,56 @@ def run_debate_endpoint(request: DebateRequest):
             "error": str(e),
             "detail": traceback.format_exc()
         }
+
+
+# ─── INDICATOR TESTER ────────────────────────────────────────────────────────
+
+@app.get("/indicator-tester", include_in_schema=False)
+def serve_indicator_tester():
+    """Serve the indicator comparison tester UI."""
+    return FileResponse("indicator_tester.html", media_type="text/html")
+
+class IndicatorTestRequest(BaseModel):
+    symbols: list = ["AAPL","MSFT","NVDA","JPM","GS","JNJ","UNH","AMZN","WMT","XOM"]
+    start_year: int = 2020
+    end_year: int = 2024
+
+@app.post("/run-indicator-test")
+def run_indicator_test(request: IndicatorTestRequest):
+    try:
+        result = run_indicator_comparison(
+            symbols=request.symbols,
+            start_year=request.start_year,
+            end_year=request.end_year
+        )
+        return result
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}
+
+
+# ─── BACKTESTER ───────────────────────────────────────────────────────────────
+
+class BacktestRequest(BaseModel):
+    architect_text: str
+    symbols: list = ["AAPL","MSFT","NVDA","JPM","GS","JNJ","UNH","AMZN","WMT","XOM"]
+    start_year: int = 2015
+    end_year: int = 2024
+    train_years: int = 2
+    test_years: int = 1
+
+@app.post("/run-backtest")
+def run_backtest(request: BacktestRequest):
+    try:
+        result = run_walkforward_from_text(
+            architect_text=request.architect_text,
+            symbols=request.symbols,
+            start_year=request.start_year,
+            end_year=request.end_year,
+            train_years=request.train_years,
+            test_years=request.test_years
+        )
+        return {"result": result}
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}

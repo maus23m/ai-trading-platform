@@ -7,6 +7,7 @@ from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
 from langchain_anthropic import ChatAnthropic
 from indicator_tester import test_indicators_from_text
+from backtester import run_walkforward_from_text
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
@@ -22,7 +23,8 @@ class DebateState(TypedDict):
     round: int
     history: List[dict]
     architect_position: str
-    backtest_results: str       # injected automatically after each architect turn
+    backtest_results: str       # indicator test results
+    walkforward_results: str    # walk-forward backtest results
     critic_objections: str
     consensus_reached: bool
     final_verdict: str
@@ -79,28 +81,47 @@ POSITION: [MAINTAINED / REFINED — and why]"""
 
     return {**state, "architect_position": position, "history": new_history}
 
-# ─── NODE 2 — INDICATOR TOOL (automatic) ─────────────────────────────────────
+# ─── NODE 2 — RESEARCH TOOL (automatic) ──────────────────────────────────────
 
 def run_indicator_tool(state: DebateState) -> DebateState:
     """
     Automatically called after every architect turn.
-    Extracts indicator names from architect's proposal,
-    runs backtests, injects results into state.
+    Runs indicator comparison AND walk-forward backtest.
+    Injects combined real data results for critic to use.
     """
-    results = test_indicators_from_text(
+    indicator_results = test_indicators_from_text(
         architect_text=state["architect_position"],
-        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],  # 5 symbols for speed
+        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
         start_year=2020,
         end_year=2024
     )
 
+    walkforward_results = run_walkforward_from_text(
+        architect_text=state["architect_position"],
+        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
+        start_year=2015,
+        end_year=2024,
+        train_years=2,
+        test_years=1
+    )
+
+    combined = (
+        "=== INDICATOR COMPARISON (in-sample) ===\n" + indicator_results +
+        "\n\n=== WALK-FORWARD BACKTEST (out-of-sample) ===\n" + walkforward_results
+    )
+
     new_history = state["history"] + [{
-        "role": "Indicator Tool",
+        "role": "Research Tool",
         "round": state["round"] + 1,
-        "content": results
+        "content": combined
     }]
 
-    return {**state, "backtest_results": results, "history": new_history}
+    return {
+        **state,
+        "backtest_results":    combined,
+        "walkforward_results": walkforward_results,
+        "history":             new_history
+    }
 
 # ─── NODE 3 — CRITIC ──────────────────────────────────────────────────────────
 

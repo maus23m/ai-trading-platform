@@ -1,9 +1,8 @@
 # Non-SAP backend — ai-trading-platform v6
 import os
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest

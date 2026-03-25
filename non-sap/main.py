@@ -15,7 +15,7 @@ import pytz
 from pydantic import BaseModel
 from agent import run_agent
 from debate import run_debate
-from indicator_tester import run_indicator_comparison
+from indicator_tester import test_indicators_from_text
 from backtester import run_walkforward_from_text
 
 app = FastAPI()
@@ -250,7 +250,7 @@ class IndicatorTestRequest(BaseModel):
 @app.post("/run-indicator-test")
 def run_indicator_test(request: IndicatorTestRequest):
     try:
-        result = run_indicator_comparison(
+        result = test_indicators_from_text(
             symbols=request.symbols,
             start_year=request.start_year,
             end_year=request.end_year

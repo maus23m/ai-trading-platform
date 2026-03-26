@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph, END
 from langchain_anthropic import ChatAnthropic
 from indicator_tester import test_indicators_from_text
 from backtester import run_walkforward_from_text
+from scoring_optimiser import run_optimisation_from_text
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
@@ -25,6 +26,7 @@ class DebateState(TypedDict):
     architect_position: str
     backtest_results: str       # indicator test results
     walkforward_results: str    # walk-forward backtest results
+    optimiser_results: str      # scoring curve optimisation results
     critic_objections: str
     consensus_reached: bool
     final_verdict: str
@@ -129,9 +131,17 @@ def run_indicator_tool(state: DebateState) -> DebateState:
         test_years=1
     )
 
+    optimiser_results = run_optimisation_from_text(
+        architect_text=state["architect_position"],
+        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
+        start_year=2015,
+        end_year=2024
+    )
+
     combined = (
         "=== INDICATOR COMPARISON (in-sample) ===\n" + indicator_results +
-        "\n\n=== WALK-FORWARD BACKTEST (out-of-sample) ===\n" + walkforward_results
+        "\n\n=== WALK-FORWARD BACKTEST (out-of-sample) ===\n" + walkforward_results +
+        "\n\n=== SCORING CURVE OPTIMISATION ===\n" + optimiser_results
     )
 
     new_history = state["history"] + [{
@@ -144,6 +154,7 @@ def run_indicator_tool(state: DebateState) -> DebateState:
         **state,
         "backtest_results":    combined,
         "walkforward_results": walkforward_results,
+        "optimiser_results":   optimiser_results,
         "history":             new_history
     }
 

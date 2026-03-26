@@ -17,6 +17,7 @@ from agent import run_agent
 from debate import run_debate
 from indicator_tester import test_indicators_from_text
 from backtester import run_walkforward_from_text
+from scoring_optimiser import run_optimisation_from_text
 
 app = FastAPI()
 
@@ -281,6 +282,29 @@ def run_backtest(request: BacktestRequest):
             end_year=request.end_year,
             train_years=request.train_years,
             test_years=request.test_years
+        )
+        return {"result": result}
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}
+
+
+# ─── SCORING OPTIMISER ───────────────────────────────────────────────────────
+
+class OptimiserRequest(BaseModel):
+    architect_text: str
+    symbols: list = ["AAPL","MSFT","NVDA","JPM","GS","JNJ","UNH","AMZN","WMT","XOM"]
+    start_year: int = 2015
+    end_year: int = 2024
+
+@app.post("/run-optimiser")
+def run_optimiser(request: OptimiserRequest):
+    try:
+        result = run_optimisation_from_text(
+            architect_text=request.architect_text,
+            symbols=request.symbols,
+            start_year=request.start_year,
+            end_year=request.end_year
         )
         return {"result": result}
     except Exception as e:

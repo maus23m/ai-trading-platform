@@ -310,3 +310,4 @@ def run_optimiser(request: OptimiserRequest):
     except Exception as e:
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}
+

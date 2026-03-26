@@ -40,13 +40,27 @@ def architect(state: DebateState) -> DebateState:
 Topic: {state['topic']}
 Context: {state['context'] or 'S&P 500 systematic trading strategy.'}
 
-Propose a specific design decision. Name the exact indicators, parameters, or rules you recommend.
-Propose from first principles. Name indicators by their standard industry names so they can be identified and tested precisely.
+You are a quantitative researcher with deep knowledge of mathematics, statistics,
+financial theory, and market microstructure.
+
+Do NOT start from indicators. Start from the market.
+
+Step 1 — INEFFICIENCY: Identify a specific market inefficiency or risk premium that exists
+in S&P 500 stocks. Explain precisely why it exists and why it has persisted despite being known.
+
+Step 2 — MATHEMATICS: Derive the mathematical formula or transformation that best captures
+this inefficiency from available market data (price, volume, fundamentals, macro).
+Do not name a known indicator — derive the formula from the theory.
+
+Step 3 — TESTABLE HYPOTHESIS: State the hypothesis in falsifiable form.
+What exact signal, threshold, and holding period would confirm or deny the edge?
+Name any mathematical functions precisely so they can be computed and tested.
 
 Structure your response as:
-PROPOSAL: [your specific proposal in 1-2 sentences naming exact indicators/rules]
-REASONING: [3-5 bullet points justifying each choice]
-EXPECTED OUTCOME: [what this achieves for the strategy]"""
+INEFFICIENCY: [what market inefficiency you are exploiting and why it persists]
+MATHEMATICS: [the exact formula or transformation derived from the theory]
+HYPOTHESIS: [falsifiable statement — if X then Y, testable with real data]
+EXPECTED EDGE: [why this should produce positive risk-adjusted returns]"""
     else:
         prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
 Topic: {state['topic']}
@@ -59,16 +73,26 @@ Your previous proposal was tested with real data. Here are the backtest results:
 The Critic challenged your proposal with:
 {state['critic_objections']}
 
-Based on the actual backtest data, respond to the Critic.
-If the data supports your proposal, defend it with the numbers.
-If the data contradicts your proposal, refine it — name specific alternative indicators to test.
-Name any indicators by their standard industry names so they can be identified and tested precisely.
+You are a quantitative researcher reasoning from evidence.
+
+The backtest data has tested your hypothesis. Now reason from what the data shows.
+
+If the data validates your hypothesis — explain the mechanism more precisely.
+If the data rejects your hypothesis — do not simply swap to a different indicator.
+Instead, ask: what does the failure tell us about the underlying market inefficiency?
+Then derive a refined hypothesis from that understanding.
+
+Always reason from:
+  inefficiency → mathematics → testable hypothesis → evidence
+
+Never reason from:
+  "the data failed, let me try a different named indicator"
 
 Structure your response as:
-REFINED PROPOSAL: [updated or defended proposal with specific indicator names]
-DATA RESPONSE: [how the backtest results support or change your position]
-RESPONSES TO OBJECTIONS: [address each objection using the data]
-POSITION: [MAINTAINED / REFINED — and why]"""
+WHAT THE DATA SHOWS: [interpret the backtest results — what do they tell us about the inefficiency]
+REFINED HYPOTHESIS: [updated mathematical formulation derived from evidence]
+RESPONSES TO OBJECTIONS: [address each challenge using theory and data together]
+POSITION: [MAINTAINED / REFINED — with the theoretical justification]"""
 
     response = llm.invoke(prompt)
     position = response.content
@@ -136,22 +160,30 @@ Architect's proposal:
 ACTUAL BACKTEST RESULTS for the proposed indicators:
 {state['backtest_results']}
 
-Use the backtest data to challenge or validate the Architect's proposal.
-Look for:
-- Indicators with low IC (< 0.05) — weak predictive power
-- Indicators with negative Sharpe — destroys value
-- Win rates below 50% — coin-flip or worse
-- High drawdowns — unacceptable risk
-- Better alternatives in the same group that scored higher
-- Overfitting concerns — too few trades, suspiciously good numbers
+You are a quantitative researcher and statistician with deep scepticism.
+Your job is to stress-test the Architect's hypothesis at two levels:
 
-If the data strongly supports the proposal, concede on those points.
-Be intellectually honest — data beats opinion.
+Level 1 — THEORY: Is the proposed market inefficiency real and well-reasoned?
+- Does the inefficiency have a credible behavioural or structural explanation?
+- Is it likely to persist or has it been arbitraged away?
+- Is the mathematical formulation a clean measure of the claimed inefficiency?
+- Or is it just a transformation of price that happens to fit recent data?
+
+Level 2 — EVIDENCE: Does the backtest data support the hypothesis?
+- Is the information coefficient meaningful or noise?
+- Is the Sharpe robust across different time windows or concentrated in one period?
+- Are there enough trades to be statistically significant?
+- Does the out-of-sample walk-forward confirm or contradict the in-sample results?
+- Are there signs of overfitting — too many parameters, too few trades, suspiciously clean results?
+
+Be intellectually honest. If the theory is sound and the data confirms it, concede.
+If either the theory or the data is weak, challenge it precisely.
 
 Structure your response as:
+THEORY CRITIQUE: [is the inefficiency real and the mathematics sound?]
 DATA ANALYSIS: [what the backtest numbers actually show]
-OBJECTIONS: [numbered list — only raise objections supported by the data]
-CONCESSIONS: [points where the data validates the Architect]
+OBJECTIONS: [numbered — only raise objections grounded in theory or data]
+CONCESSIONS: [where the Architect is right]
 VERDICT: [CHALLENGED / PARTIALLY SATISFIED / SATISFIED]"""
 
     response = llm.invoke(prompt)
@@ -180,17 +212,30 @@ Rounds completed: {state['round']} of {state['max_rounds']}
 Full debate transcript including backtest results:
 {_format_history(state['history'])}
 
-Based on the full debate and the actual backtest data:
-1. Which indicators are justified by the data?
-2. Which should be rejected and why?
-3. What is the final recommended indicator stack?
+You are an independent Judge — part quantitative researcher, part risk manager.
+
+Evaluate the debate at three levels:
+
+1. THEORY: Was the proposed market inefficiency credible and well-reasoned?
+   Is it a genuine edge or a data mining artefact?
+
+2. EVIDENCE: Does the backtest data — both in-sample and out-of-sample walk-forward —
+   confirm the hypothesis? Is the edge robust across time periods and market regimes?
+
+3. COMPLETENESS: Does this output feed into a complete trading strategy?
+   What has been validated? What remains to be tested before the Strategy Architect
+   can assemble a deployable strategy?
+
+Your verdict feeds directly into the Strategy Architect — be precise about
+what is proven, what is promising but unproven, and what should be discarded.
 
 Structure your response as:
 CONSENSUS: [YES / NO / PARTIAL]
-FINAL DECISION: [exact indicator stack to implement — name each indicator]
-DATA JUSTIFICATION: [which backtest metrics support this decision]
-REJECTED INDICATORS: [what was tested and failed and why]
-REMAINING RISKS: [what needs further validation]
+VALIDATED EDGE: [what market inefficiency is confirmed by theory + data]
+MATHEMATICAL FORMULATION: [the exact formula to implement — derived from the debate]
+REJECTED HYPOTHESES: [what failed and the theoretical reason why]
+FEEDS INTO STRATEGY ARCHITECT: [what this output contributes to the full strategy]
+REMAINING GAPS: [what the Strategy Architect still needs before deploying]
 CONFIDENCE: [HIGH / MEDIUM / LOW]"""
 
     response = llm.invoke(prompt)

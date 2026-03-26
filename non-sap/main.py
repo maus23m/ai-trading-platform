@@ -227,6 +227,46 @@ def run_debate_endpoint(request: DebateRequest):
             context=request.context,
             max_rounds=max(1, min(10, request.max_rounds))
         )
+
+        # Save Judge verdict to Supabase for Strategy Architect to read
+        try:
+            verdict = result.get("final_verdict", "")
+
+            # Extract structured fields from verdict text
+            def extract_section(text, label):
+                upper = text.upper()
+                if label.upper() + ":" not in upper:
+                    return ""
+                idx = upper.find(label.upper() + ":")
+                rest = text[idx + len(label) + 1:].strip()
+                # Take until next section heading or end
+                lines = rest.split("\n")
+                section = []
+                for line in lines:
+                    if any(line.upper().startswith(h) for h in [
+                        "CONSENSUS:", "VALIDATED EDGE:", "MATHEMATICAL FORMULATION:",
+                        "REJECTED HYPOTHESES:", "FEEDS INTO STRATEGY ARCHITECT:",
+                        "REMAINING GAPS:", "CONFIDENCE:", "FINAL DECISION:"
+                    ]):
+                        break
+                    section.append(line)
+                return "\n".join(section).strip()[:2000]
+
+            supabase.table("debate_results").insert({
+                "topic":                    result.get("topic", request.topic),
+                "rounds_completed":         result.get("rounds_completed", 0),
+                "consensus_reached":        result.get("consensus_reached", False),
+                "validated_edge":           extract_section(verdict, "VALIDATED EDGE"),
+                "mathematical_formulation": extract_section(verdict, "MATHEMATICAL FORMULATION"),
+                "feeds_into_architect":     extract_section(verdict, "FEEDS INTO STRATEGY ARCHITECT"),
+                "remaining_gaps":           extract_section(verdict, "REMAINING GAPS"),
+                "confidence":               extract_section(verdict, "CONFIDENCE"),
+                "final_verdict":            verdict[:5000],
+                "decision":                 result.get("decision", "")
+            }).execute()
+        except Exception as save_err:
+            result["supabase_error"] = str(save_err)
+
         return result
     except Exception as e:
         import traceback
@@ -310,4 +350,3 @@ def run_optimiser(request: OptimiserRequest):
     except Exception as e:
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}
-

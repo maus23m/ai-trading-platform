@@ -1,14 +1,14 @@
 # strategy_architect.py — Stage 2: Strategy Architect Agent
-# Reads ALL accumulated debate results from Supabase
-# Designs a complete, deployable trading strategy from validated evidence
-# Owns sole authority to declare a strategy ready for deployment
-# No other agent can do this
+# Autonomous bounded loop — reads evidence, fires debates, re-reads, repeats
+# Terminates when: READY | max_research_rounds reached | no progress | no new gaps
+# RULE: Only this agent can declare a strategy deployable
 
 import os
 from typing import TypedDict, List, Dict
 from langgraph.graph import StateGraph, END
 from langchain_anthropic import ChatAnthropic
 from supabase import create_client
+from debate import run_debate
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
@@ -20,77 +20,86 @@ supabase = create_client(
     os.environ["SUPABASE_KEY"]
 )
 
+# ─── BOUNDS ───────────────────────────────────────────────────────────────────
+
+MAX_RESEARCH_ROUNDS  = 5   # max autonomous debate rounds
+MAX_DEBATES_PER_ROUND = 3  # max debates fired per round
+DEBATE_ROUNDS = 2          # rounds per debate (keep short for speed)
+
 # ─── STATE ────────────────────────────────────────────────────────────────────
 
 class ArchitectState(TypedDict):
-    debate_results: List[Dict]      # all rows from debate_results table
-    backtest_results: List[Dict]    # all rows from backtest_runs table
-    analysis: str                   # architect's analysis of accumulated evidence
-    strategy_spec: str              # complete strategy specification
-    deployment_decision: str        # READY / NOT_READY / NEEDS_MORE_RESEARCH
-    deployment_reason: str          # why this decision was made
-    gaps: List[str]                 # what still needs to be validated
-    next_debate_topics: List[str]   # what the debate tool should tackle next
+    # Evidence
+    debate_results: List[Dict]
+    backtest_results: List[Dict]
+    # Analysis
+    analysis: str
+    strategy_spec: str
+    deployment_decision: str
+    deployment_reason: str
+    gaps: List[str]
+    next_debate_topics: List[str]
+    # Loop control
+    research_round: int
+    max_research_rounds: int
+    previous_gaps: List[str]     # to detect no-progress
+    debates_fired: List[str]     # topics already debated this run
+    termination_reason: str
+    # Log
+    research_log: List[str]
 
 # ─── NODE 1 — LOAD EVIDENCE ───────────────────────────────────────────────────
 
 def load_evidence(state: ArchitectState) -> ArchitectState:
-    """Load all accumulated evidence from Supabase."""
-
-    # Load all debate results
     try:
         debate_rows = supabase.table("debate_results").select("*").order(
             "created_at", desc=False
         ).execute()
         debate_results = debate_rows.data or []
-    except Exception as e:
+    except Exception:
         debate_results = []
 
-    # Load all backtest runs
     try:
         backtest_rows = supabase.table("backtest_runs").select("*").order(
             "id", desc=False
         ).execute()
         backtest_results = backtest_rows.data or []
-    except Exception as e:
+    except Exception:
         backtest_results = []
+
+    log = state.get("research_log", [])
+    log.append(
+        f"Round {state['research_round']+1}: loaded {len(debate_results)} debates, "
+        f"{len(backtest_results)} backtests"
+    )
 
     return {
         **state,
         "debate_results":  debate_results,
-        "backtest_results": backtest_results
+        "backtest_results": backtest_results,
+        "research_log": log
     }
 
 # ─── NODE 2 — ANALYSE EVIDENCE ────────────────────────────────────────────────
 
 def analyse_evidence(state: ArchitectState) -> ArchitectState:
-    """
-    Architect reads all accumulated evidence and produces a structured analysis.
-    Not constrained by any single debate — reasons across all of them.
-    """
-    debate_results  = state["debate_results"]
-    backtest_results = state["backtest_results"]
-
-    # Format debate evidence
     debate_summary = ""
-    for i, row in enumerate(debate_results):
+    for i, row in enumerate(state["debate_results"]):
         debate_summary += f"""
 DEBATE {i+1} — Topic: {row.get('topic', 'unknown')}
   Consensus: {row.get('consensus_reached')}
   Confidence: {row.get('confidence', '')}
-  Validated edge: {row.get('validated_edge', '')[:500]}
-  Mathematical formulation: {row.get('mathematical_formulation', '')[:500]}
-  Feeds into architect: {row.get('feeds_into_architect', '')[:500]}
+  Validated edge: {row.get('validated_edge', '')[:400]}
+  Mathematical formulation: {row.get('mathematical_formulation', '')[:400]}
+  Feeds into architect: {row.get('feeds_into_architect', '')[:400]}
   Remaining gaps: {row.get('remaining_gaps', '')[:300]}
 """
 
-    # Format backtest evidence
     backtest_summary = ""
-    for row in backtest_results[-10:]:  # last 10 runs
+    for row in state["backtest_results"][-10:]:
         p = row.get("parameters", {})
         backtest_summary += (
             f"  symbol={p.get('symbol','?')} "
-            f"sma={p.get('sma_short','?')}/{p.get('sma_long','?')} "
             f"return={row.get('total_return',0):.3f} "
             f"win_rate={row.get('win_rate',0):.3f} "
             f"drawdown={row.get('max_drawdown',0):.3f} "
@@ -98,34 +107,31 @@ DEBATE {i+1} — Topic: {row.get('topic', 'unknown')}
         )
 
     prompt = f"""You are the Strategy Architect — the highest authority in this trading system.
-
-Your role is to read ALL accumulated research evidence and determine:
-1. What market inefficiencies have been confirmed across multiple debates?
-2. What mathematical formulations are validated and ready to implement?
-3. What is contradicted or unproven and should be discarded?
-4. What critical gaps remain before a complete strategy can be deployed?
-
-You have access to {len(debate_results)} debate(s) and {len(backtest_results)} backtest run(s).
+Research round: {state['research_round']+1} of {state['max_research_rounds']}
+Debates completed: {len(state['debate_results'])}
+Backtests completed: {len(state['backtest_results'])}
 
 ACCUMULATED DEBATE EVIDENCE:
-{debate_summary if debate_summary else "No debate results yet."}
+{debate_summary or "No debate results yet."}
 
 ACCUMULATED BACKTEST EVIDENCE:
-{backtest_summary if backtest_summary else "No backtest runs yet."}
+{backtest_summary or "No backtest runs yet."}
 
-Analyse this evidence as a senior quantitative researcher would.
+Analyse this evidence as a senior quantitative researcher.
 Look for:
-- Consistent findings across multiple debates (high confidence)
+- Confirmed edges across multiple debates (high confidence)
 - Contradictions between debates (needs resolution)
-- Gaps in the three-layer framework (macro/fundamental/technical)
-- What is validated vs what is still theoretical
+- Which of the three layers (macro/fundamental/technical) have been addressed
+- What is validated vs still theoretical
+- Whether gaps from the previous round have been closed
 
 Structure your analysis as:
-CONFIRMED EDGES: [what is proven across multiple debates and backtests]
+CONFIRMED EDGES: [what is proven]
 CONFIRMED REJECTIONS: [what has been empirically rejected]
-FRAMEWORK COVERAGE: [which of the three layers have been addressed]
-CRITICAL GAPS: [what is missing before a complete strategy exists]
-SYNTHESIS: [how the confirmed edges fit together into a coherent whole]"""
+FRAMEWORK COVERAGE: [macro/fundamental/technical — what is done vs missing]
+CLOSED GAPS: [gaps from previous round that are now resolved]
+REMAINING GAPS: [what is still missing — be specific and numbered]
+SYNTHESIS: [how confirmed edges fit together]"""
 
     response = llm.invoke(prompt)
     return {**state, "analysis": response.content}
@@ -133,90 +139,58 @@ SYNTHESIS: [how the confirmed edges fit together into a coherent whole]"""
 # ─── NODE 3 — DESIGN STRATEGY ─────────────────────────────────────────────────
 
 def design_strategy(state: ArchitectState) -> ArchitectState:
-    """
-    Based on the analysis, design the most complete strategy possible
-    from currently validated evidence. Be explicit about what is
-    proven vs assumed.
-    """
     prompt = f"""You are the Strategy Architect designing a complete trading strategy.
+Research round: {state['research_round']+1} of {state['max_research_rounds']}
 
 Based on this analysis of accumulated research:
 {state['analysis']}
 
-Design the most complete, deployable trading strategy that can be justified
-by the current evidence. Be explicit about:
-- What is empirically proven (high confidence)
-- What is theoretically sound but needs more validation (medium confidence)
-- What parameters are validated vs assumed
-
-Do NOT invent edges that haven't been tested. Do NOT claim higher confidence
-than the evidence supports. A partial but honest strategy is better than
-a complete but fabricated one.
-
-The strategy must cover:
-1. SIGNAL GENERATION: exact mathematical formula for entry signals
-2. POSITION SIZING: how much to allocate per signal
-3. RISK MANAGEMENT: stop losses, drawdown limits, position limits
-4. EXIT RULES: when to close positions
-5. UNIVERSE: which stocks to trade and any filters
-6. REGIME FILTER: when to reduce or stop trading
+Design the most complete, deployable trading strategy justified by current evidence.
+Mark each component as VALIDATED, ASSUMED, or REJECTED.
 
 Structure as:
 STRATEGY NAME: [descriptive name]
-CORE HYPOTHESIS: [the market inefficiency being exploited]
+CORE HYPOTHESIS: [market inefficiency being exploited]
 SIGNAL: [exact formula — only what is validated]
-POSITION SIZING: [rules — mark as VALIDATED or ASSUMED]
-EXIT RULES: [rules — mark as VALIDATED or ASSUMED]
+POSITION SIZING: [rules — mark VALIDATED or ASSUMED]
+EXIT RULES: [rules — mark VALIDATED or ASSUMED]
 UNIVERSE: [stock selection criteria]
-REGIME FILTER: [when to trade vs not trade]
+REGIME FILTER: [when to trade vs not — mark VALIDATED or ASSUMED]
 EXPECTED PERFORMANCE: [based on backtest evidence only]
-CONFIDENCE: [HIGH/MEDIUM/LOW per component]"""
+CONFIDENCE PER COMPONENT: [HIGH/MEDIUM/LOW per component]"""
 
     response = llm.invoke(prompt)
     return {**state, "strategy_spec": response.content}
 
 # ─── NODE 4 — DEPLOYMENT DECISION ────────────────────────────────────────────
 
-def deployment_decision(state: ArchitectState) -> ArchitectState:
-    """
-    Make the final deployment decision.
-    Only this agent can declare a strategy ready.
-    Be conservative — paper trading Sharpe must be validated first.
-    """
+def make_deployment_decision(state: ArchitectState) -> ArchitectState:
     prompt = f"""You are the Strategy Architect making the final deployment decision.
+Research round: {state['research_round']+1} of {state['max_research_rounds']}
+Debates completed: {len(state['debate_results'])}
 
 Strategy specification:
 {state['strategy_spec']}
 
-Analysis of evidence:
+Analysis:
 {state['analysis']}
 
-Number of debates completed: {len(state['debate_results'])}
-Number of backtest runs: {len(state['backtest_results'])}
+Make a deployment decision:
+- READY: All components empirically validated. Deploy to paper trading.
+- NOT_READY: Core signal proven but gaps remain. Specify exactly what is missing.
+- NEEDS_MORE_RESEARCH: Core signal unproven. Specify what debates are needed.
 
-Make a deployment decision. The bar is HIGH:
-- READY: Strategy is complete, all components empirically validated,
-  paper trading results confirm live readiness. Only declare READY
-  if every component is validated and risks are fully understood.
-
-- NOT_READY: Strategy has validated core signals but missing components
-  (position sizing, regime filter, universe definition, etc.).
-  Specify exactly what is needed before READY.
-
-- NEEDS_MORE_RESEARCH: Core signal is unproven or contradicted.
-  Specify what debates or backtests are needed next.
-
-Also provide:
-- The 3 highest priority topics for the next debate rounds
-- What specific validation is needed before the next review
+Also provide up to {MAX_DEBATES_PER_ROUND} specific debate topics to close the most critical gaps.
+Each topic must be a clear open question that the debate tool can answer.
+Do NOT name specific indicators or answers in the topics — let the agents discover.
 
 Structure as:
 DECISION: [READY / NOT_READY / NEEDS_MORE_RESEARCH]
-REASON: [why this decision — be specific]
+REASON: [specific justification]
 WHAT IS PROVEN: [bullet list]
-WHAT IS MISSING: [bullet list — specific gaps]
-NEXT DEBATE TOPICS: [3 specific questions for the debate tool]
-NEXT REVIEW CRITERIA: [what needs to be true to upgrade the decision]"""
+WHAT IS MISSING: [bullet list — numbered, specific]
+NEXT DEBATE TOPICS: [up to {MAX_DEBATES_PER_ROUND} open questions — one per line, no numbering prefix]
+NEXT REVIEW CRITERIA: [what must be true to upgrade decision]"""
 
     response = llm.invoke(prompt)
     verdict = response.content
@@ -225,20 +199,24 @@ NEXT REVIEW CRITERIA: [what needs to be true to upgrade the decision]"""
     decision = "NEEDS_MORE_RESEARCH"
     if "DECISION:" in verdict.upper():
         after = verdict.upper().split("DECISION:")[1][:50]
-        if "READY" in after and "NOT_READY" not in after:
-            decision = "READY"
-        elif "NOT_READY" in after:
+        if "NOT_READY" in after:
             decision = "NOT_READY"
+        elif "READY" in after:
+            decision = "READY"
 
     # Extract next debate topics
     topics = []
     if "NEXT DEBATE TOPICS:" in verdict.upper():
         idx = verdict.upper().find("NEXT DEBATE TOPICS:")
         rest = verdict[idx:].split("\n")
-        for line in rest[1:6]:
-            line = line.strip().lstrip("•-123456789. ")
-            if line and len(line) > 10:
-                topics.append(line)
+        for line in rest[1:MAX_DEBATES_PER_ROUND+4]:
+            line = line.strip().lstrip("•-*123456789. ")
+            if line and len(line) > 15 and "?" in line:
+                # Skip if already debated this run
+                if not any(line[:30] in d for d in state.get("debates_fired", [])):
+                    topics.append(line)
+            if len(topics) >= MAX_DEBATES_PER_ROUND:
+                break
 
     # Extract gaps
     gaps = []
@@ -246,7 +224,7 @@ NEXT REVIEW CRITERIA: [what needs to be true to upgrade the decision]"""
         idx = verdict.upper().find("WHAT IS MISSING:")
         rest = verdict[idx:].split("\n")
         for line in rest[1:8]:
-            line = line.strip().lstrip("•-123456789. ")
+            line = line.strip().lstrip("•-*123456789. ")
             if line and len(line) > 5:
                 gaps.append(line)
 
@@ -254,8 +232,125 @@ NEXT REVIEW CRITERIA: [what needs to be true to upgrade the decision]"""
         **state,
         "deployment_decision": decision,
         "deployment_reason":   verdict,
-        "next_debate_topics":  topics[:3],
+        "next_debate_topics":  topics,
         "gaps":                gaps
+    }
+
+# ─── NODE 5 — FIRE DEBATES ────────────────────────────────────────────────────
+
+def fire_debates(state: ArchitectState) -> ArchitectState:
+    """
+    Autonomously fire debates on identified gaps.
+    Bounded by MAX_DEBATES_PER_ROUND.
+    Saves results to Supabase so next load_evidence picks them up.
+    """
+    log = state.get("research_log", [])
+    topics = state.get("next_debate_topics", [])[:MAX_DEBATES_PER_ROUND]
+    debates_fired = state.get("debates_fired", [])
+
+    if not topics:
+        log.append(f"Round {state['research_round']+1}: no new topics to debate")
+        return {**state, "research_log": log}
+
+    log.append(f"Round {state['research_round']+1}: firing {len(topics)} debate(s) autonomously")
+
+    for topic in topics:
+        if topic in debates_fired:
+            log.append(f"  skipped (already debated): {topic[:60]}")
+            continue
+
+        log.append(f"  debating: {topic[:80]}...")
+
+        try:
+            result = run_debate(
+                topic=topic,
+                context="S&P 500 systematic trading strategy research.",
+                max_rounds=DEBATE_ROUNDS
+            )
+
+            # Save to Supabase
+            verdict = result.get("final_verdict", "")
+
+            def extract_section(text, label):
+                upper = text.upper()
+                if label.upper() + ":" not in upper:
+                    return ""
+                idx = upper.find(label.upper() + ":")
+                rest = text[idx + len(label) + 1:].strip()
+                lines = rest.split("\n")
+                section = []
+                for line in lines:
+                    if any(line.upper().startswith(h) for h in [
+                        "CONSENSUS:", "VALIDATED EDGE:", "MATHEMATICAL FORMULATION:",
+                        "REJECTED HYPOTHESES:", "FEEDS INTO STRATEGY ARCHITECT:",
+                        "REMAINING GAPS:", "CONFIDENCE:", "FINAL DECISION:"
+                    ]):
+                        break
+                    section.append(line)
+                return "\n".join(section).strip()[:2000]
+
+            supabase.table("debate_results").insert({
+                "topic":                    topic,
+                "rounds_completed":         result.get("rounds_completed", 0),
+                "consensus_reached":        result.get("consensus_reached", False),
+                "validated_edge":           extract_section(verdict, "VALIDATED EDGE"),
+                "mathematical_formulation": extract_section(verdict, "MATHEMATICAL FORMULATION"),
+                "feeds_into_architect":     extract_section(verdict, "FEEDS INTO STRATEGY ARCHITECT"),
+                "remaining_gaps":           extract_section(verdict, "REMAINING GAPS"),
+                "confidence":               extract_section(verdict, "CONFIDENCE"),
+                "final_verdict":            verdict[:5000],
+                "decision":                 result.get("decision", "")
+            }).execute()
+
+            debates_fired.append(topic)
+            log.append(f"  ✓ saved: {topic[:60]}")
+
+        except Exception as e:
+            log.append(f"  ✗ failed: {topic[:60]} — {str(e)[:80]}")
+
+    return {
+        **state,
+        "debates_fired": debates_fired,
+        "research_log":  log
+    }
+
+# ─── ROUTING ──────────────────────────────────────────────────────────────────
+
+def should_continue(state: ArchitectState) -> str:
+    """
+    Decide whether to loop back for another research round or terminate.
+    Bounded by MAX_RESEARCH_ROUNDS and progress detection.
+    """
+    decision = state.get("deployment_decision", "")
+    round_num = state.get("research_round", 0)
+    current_gaps = set(state.get("gaps", []))
+    previous_gaps = set(state.get("previous_gaps", []))
+
+    # Termination condition 1 — success
+    if decision == "READY":
+        return "end"
+
+    # Termination condition 2 — safety limit
+    if round_num >= state.get("max_research_rounds", MAX_RESEARCH_ROUNDS) - 1:
+        return "end"
+
+    # Termination condition 3 — no new topics to debate
+    if not state.get("next_debate_topics"):
+        return "end"
+
+    # Termination condition 4 — no progress (same gaps as last round)
+    if current_gaps and previous_gaps and current_gaps == previous_gaps:
+        return "end"
+
+    # Continue — increment round and loop back
+    return "continue"
+
+def increment_round(state: ArchitectState) -> ArchitectState:
+    """Increment round counter and save current gaps for progress detection."""
+    return {
+        **state,
+        "research_round":  state["research_round"] + 1,
+        "previous_gaps":   state.get("gaps", [])
     }
 
 # ─── BUILD GRAPH ──────────────────────────────────────────────────────────────
@@ -263,28 +358,52 @@ NEXT REVIEW CRITERIA: [what needs to be true to upgrade the decision]"""
 def build_architect_graph():
     graph = StateGraph(ArchitectState)
 
-    graph.add_node("load_evidence",      load_evidence)
-    graph.add_node("analyse_evidence",   analyse_evidence)
-    graph.add_node("design_strategy",    design_strategy)
-    graph.add_node("deployment_decision", deployment_decision)
+    graph.add_node("load_evidence",         load_evidence)
+    graph.add_node("analyse_evidence",      analyse_evidence)
+    graph.add_node("design_strategy",       design_strategy)
+    graph.add_node("deployment_decision",   make_deployment_decision)
+    graph.add_node("fire_debates",          fire_debates)
+    graph.add_node("increment_round",       increment_round)
 
     graph.set_entry_point("load_evidence")
-    graph.add_edge("load_evidence",      "analyse_evidence")
-    graph.add_edge("analyse_evidence",   "design_strategy")
-    graph.add_edge("design_strategy",    "deployment_decision")
-    graph.add_edge("deployment_decision", END)
+    graph.add_edge("load_evidence",       "analyse_evidence")
+    graph.add_edge("analyse_evidence",    "design_strategy")
+    graph.add_edge("design_strategy",     "deployment_decision")
+    graph.add_conditional_edges(
+        "deployment_decision",
+        should_continue,
+        {
+            "end":      "end_node",
+            "continue": "fire_debates"
+        }
+    )
+    graph.add_edge("fire_debates",        "increment_round")
+    graph.add_edge("increment_round",     "load_evidence")  # loop back
+
+    # End node
+    graph.add_node("end_node", lambda s: {
+        **s,
+        "termination_reason": (
+            "READY" if s["deployment_decision"] == "READY"
+            else f"max_rounds_reached ({s['research_round']+1})"
+            if s["research_round"] >= s["max_research_rounds"]-1
+            else "no_progress" if set(s.get("gaps",[])) == set(s.get("previous_gaps",[]))
+            else "no_new_topics"
+        )
+    })
+    graph.add_edge("end_node", END)
 
     return graph.compile()
 
 # ─── RUN FUNCTION ─────────────────────────────────────────────────────────────
 
-def run_strategy_architect() -> dict:
+def run_strategy_architect(
+    max_research_rounds: int = MAX_RESEARCH_ROUNDS
+) -> dict:
     """
-    Run the Strategy Architect.
-    Reads all accumulated evidence from Supabase and produces:
-    - Complete strategy specification
-    - Deployment decision
-    - Next steps for the debate tool
+    Run the fully autonomous Strategy Architect.
+    Bounded loop: reads evidence → decides → fires debates → re-reads → repeats.
+    Stops when READY or safety limits reached.
     """
     app = build_architect_graph()
 
@@ -296,12 +415,19 @@ def run_strategy_architect() -> dict:
         "deployment_decision": "",
         "deployment_reason":   "",
         "gaps":                [],
-        "next_debate_topics":  []
+        "next_debate_topics":  [],
+        "research_round":      0,
+        "max_research_rounds": max_research_rounds,
+        "previous_gaps":       [],
+        "debates_fired":       [],
+        "termination_reason":  "",
+        "research_log":        []
     }
 
+    # recursion_limit = nodes(6) × max_rounds(5) × 2 + buffer = 70
     final_state = app.invoke(
         initial_state,
-        config={"recursion_limit": 25}
+        config={"recursion_limit": 70}
     )
 
     return {
@@ -311,6 +437,10 @@ def run_strategy_architect() -> dict:
         "deployment_reason":    final_state["deployment_reason"],
         "gaps":                 final_state["gaps"],
         "next_debate_topics":   final_state["next_debate_topics"],
+        "termination_reason":   final_state["termination_reason"],
+        "research_rounds":      final_state["research_round"] + 1,
+        "debates_fired":        final_state["debates_fired"],
+        "research_log":         final_state["research_log"],
         "debates_read":         len(final_state["debate_results"]),
         "backtests_read":       len(final_state["backtest_results"])
     }

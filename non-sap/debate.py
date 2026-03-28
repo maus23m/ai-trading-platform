@@ -1,341 +1,284 @@
-# debate.py — Dual-agent debate tool v2
-# Architect proposes → indicator tool runs automatically → Critic challenges on real data
-# Fully autonomous — no human input needed between rounds
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Debate Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0c0f;--bg2:#111418;--bg3:#181d23;
+  --border:#1e2530;--border2:#2a3340;
+  --text:#c8d4e0;--text2:#6b7f8f;--text3:#3d4f5f;
+  --green:#00c896;--green2:rgba(0,200,150,0.12);
+  --amber:#f5a623;--amber2:rgba(245,166,35,0.12);
+  --blue:#3b8beb;--blue2:rgba(59,139,235,0.12);
+  --coral:#ff6b6b;--coral2:rgba(255,107,107,0.12);
+  --purple:#a78bfa;--purple2:rgba(167,139,250,0.12);
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh}
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:14px}
+.logo{width:30px;height:30px;background:var(--purple);border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;color:#000;font-weight:500}
+.header-title{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.04em}
+.header-sub{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:1px}
+.nav-link{font-family:var(--mono);font-size:11px;color:var(--text3);text-decoration:none;padding:6px 12px;border:1px solid var(--border2);border-radius:6px}
+.nav-link:hover{color:var(--text);border-color:var(--text2)}
+.layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 57px)}
+.sidebar{border-right:1px solid var(--border);padding:20px 18px;display:flex;flex-direction:column;gap:16px;overflow-y:auto}
+.sidebar-label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field-label{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase}
+.field-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;transition:border-color .15s}
+.field-input:focus{border-color:var(--purple)}
+textarea.field-input{resize:vertical;min-height:80px;line-height:1.5}
+.topics-grid{display:flex;flex-direction:column;gap:6px}
+.topic-btn{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;text-align:left;transition:all .15s}
+.topic-btn:hover{border-color:var(--purple);color:var(--text)}
+.topic-btn.active{background:var(--purple2);border-color:var(--purple);color:var(--purple)}
+.rounds-row{display:flex;align-items:center;gap:10px}
+.rounds-val{font-family:var(--mono);font-size:16px;font-weight:500;color:var(--text);min-width:20px;text-align:center}
+.rounds-btn{width:28px;height:28px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.rounds-btn:hover{border-color:var(--text2);color:var(--text)}
+.btn{font-family:var(--mono);font-size:11px;font-weight:500;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;letter-spacing:.03em;transition:all .15s;display:inline-flex;align-items:center;gap:6px;width:100%;justify-content:center}
+.btn-primary{background:var(--purple);color:#000}.btn-primary:hover{background:#c4b5fd}
+.btn-primary:disabled{background:var(--purple2);color:var(--text3);cursor:not-allowed}
+.content{display:flex;flex-direction:column;padding:24px;gap:20px;overflow-y:auto}
+.debate-area{display:flex;flex-direction:column;gap:12px}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;gap:12px;color:var(--text3);font-family:var(--mono);font-size:11px;text-align:center;line-height:2}
+.empty-icon{font-size:32px;opacity:.3}
+.round-block{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.round-header{padding:8px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.round-body{padding:16px;font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--text2);white-space:pre-wrap}
+.architect-block .round-header{background:rgba(59,139,235,0.08);color:var(--blue)}
+.critic-block .round-header{background:rgba(255,107,107,0.08);color:var(--coral)}
+.judge-block{border-color:var(--purple)}
+.judge-block .round-header{background:var(--purple2);color:var(--purple)}
+.judge-block .round-body{color:var(--text)}
+.tool-block .round-header{background:rgba(0,200,150,0.08);color:var(--green)}
+.tool-block .round-body{color:var(--text2);font-size:10px}
+.verdict-box{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.verdict-header{background:var(--bg3);padding:10px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.verdict-body{padding:16px;font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--text);white-space:pre-wrap}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);letter-spacing:.04em;font-weight:500}
+.badge-green{background:var(--green2);color:var(--green)}
+.badge-amber{background:var(--amber2);color:var(--amber)}
+.badge-coral{background:var(--coral2);color:var(--coral)}
+.badge-purple{background:var(--purple2);color:var(--purple)}
+.status-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--text2)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spinning .7s linear infinite;vertical-align:middle}
+@keyframes spinning{to{transform:rotate(360deg)}}
+.divider{border:none;border-top:1px solid var(--border);margin:4px 0}
+.gap8{display:flex;flex-direction:column;gap:8px}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-family:var(--mono);font-size:11px;color:var(--text);transform:translateY(80px);opacity:0;transition:all .25s;z-index:999}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.err{border-color:var(--coral);color:var(--coral)}
+</style>
+</head>
+<body>
 
-import os
-from typing import TypedDict, List
-from langgraph.graph import StateGraph, END
-from langchain_anthropic import ChatAnthropic
-from indicator_tester import test_indicators_from_text
-from backtester import run_walkforward_from_text
-from scoring_optimiser import run_optimisation_from_text
+<header class="header">
+  <div class="header-left">
+    <div class="logo">⚖</div>
+    <div>
+      <div class="header-title">Strategy Debate Tool</div>
+      <div class="header-sub">Architect vs Critic · dual-agent framework</div>
+    </div>
+  </div>
+  <a href="/dashboard" class="nav-link">← dashboard</a>
+</header>
 
-llm = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",
-    api_key=os.environ["ANTHROPIC_API_KEY"]
-)
+<div class="layout">
+  <aside class="sidebar">
 
-# ─── STATE ────────────────────────────────────────────────────────────────────
+    <div>
+      <div class="sidebar-label" style="margin-bottom:10px">preset topics</div>
+      <div class="topics-grid">
+        <button class="topic-btn" onclick="setTopic(this, 'What technical indicators should we use for a systematic S&P 500 momentum strategy? Consider what dimensions of price behaviour need to be captured and propose the best indicators for each dimension.')">Indicators</button>
+        <button class="topic-btn" onclick="setTopic(this, 'How should the scoring layers of a systematic S&P 500 strategy be weighted relative to each other? What principles should guide how much influence each layer has on the final signal?')">Layer weights</button>
+        <button class="topic-btn" onclick="setTopic(this, 'What should the exit rules be for a systematic S&P 500 momentum strategy? When should a position be closed and what evidence should trigger an exit decision?')">Exit rules</button>
+        <button class="topic-btn" onclick="setTopic(this, 'How should we design and validate a systematic S&P 500 strategy to ensure it generalises to unseen data rather than fitting to historical patterns?')">Overfitting</button>
+        <button class="topic-btn" onclick="setTopic(this, 'How should we define and detect the macro market regime for a systematic S&P 500 strategy? What market conditions should determine whether we are long-biased, neutral, or short-biased?')">Macro layer</button>
+        <button class="topic-btn" onclick="setTopic(this, 'What are realistic performance expectations for a systematic S&P 500 momentum strategy? What level of returns, win rate, and drawdown should we target and why?')">EV assumptions</button>
+        <button class="topic-btn" onclick="setTopic(this, 'Design a complete systematic S&P 500 scoring framework from first principles. What layers, signals, and rules should it contain to produce reliable long and short signals?')">Full framework</button>
+      </div>
+    </div>
 
-class DebateState(TypedDict):
-    topic: str
-    context: str
-    max_rounds: int
-    round: int
-    history: List[dict]
-    architect_position: str
-    backtest_results: str       # indicator test results
-    walkforward_results: str    # walk-forward backtest results
-    optimiser_results: str      # scoring curve optimisation results
-    critic_objections: str
-    consensus_reached: bool
-    final_verdict: str
-    decision: str
+    <hr class="divider">
 
-# ─── NODE 1 — ARCHITECT ───────────────────────────────────────────────────────
+    <div class="gap8">
+      <div class="field">
+        <div class="field-label">custom topic</div>
+        <textarea class="field-input" id="topic-input" rows="4" placeholder="Or type your own design question..."></textarea>
+      </div>
+      <div class="field">
+        <div class="field-label">context (optional)</div>
+        <textarea class="field-input" id="context-input" rows="3" placeholder="Any background info for the agents..."></textarea>
+      </div>
+    </div>
 
-def architect(state: DebateState) -> DebateState:
-    is_first = state["round"] == 0
+    <hr class="divider">
 
-    if is_first:
-        prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
-Topic: {state['topic']}
-Context: {state['context'] or 'S&P 500 systematic trading strategy.'}
+    <div class="field">
+      <div class="field-label">max rounds</div>
+      <div class="rounds-row">
+        <button class="rounds-btn" onclick="adjustRounds(-1)">−</button>
+        <span class="rounds-val" id="rounds-val">3</span>
+        <button class="rounds-btn" onclick="adjustRounds(1)">+</button>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">rounds (1–10)</span>
+      </div>
+    </div>
 
-You are a quantitative researcher with deep knowledge of mathematics, statistics,
-financial theory, and market microstructure.
+    <button class="btn btn-primary" id="debate-btn" onclick="startDebate()">⚖ start debate</button>
 
-Do NOT start from indicators. Start from the market.
+  </aside>
 
-Step 1 — INEFFICIENCY: Identify a specific market inefficiency or risk premium that exists
-in S&P 500 stocks. Explain precisely why it exists and why it has persisted despite being known.
+  <div class="content">
+    <div id="status-area"></div>
+    <div class="debate-area" id="debate-area">
+      <div class="empty-state">
+        <div class="empty-icon">⚖</div>
+        <div>select a topic and click start debate</div>
+        <div style="color:var(--text3)">Architect proposes · Critic challenges · Judge decides</div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Step 2 — MATHEMATICS: Derive the mathematical formula or transformation that best captures
-this inefficiency from available market data (price, volume, fundamentals, macro).
-Do not name a known indicator — derive the formula from the theory.
+<div class="toast" id="toast"></div>
 
-Step 3 — TESTABLE HYPOTHESIS: State the hypothesis in falsifiable form.
-What exact signal, threshold, and holding period would confirm or deny the edge?
-Name any mathematical functions precisely so they can be computed and tested.
+<script>
+const BASE = 'https://non-sap-backend-909023162073.europe-west2.run.app';
+let maxRounds = 3;
 
-Structure your response as:
-INEFFICIENCY: [what market inefficiency you are exploiting and why it persists]
-MATHEMATICS: [the exact formula or transformation derived from the theory]
-HYPOTHESIS: [falsifiable statement — if X then Y, testable with real data]
-EXPECTED EDGE: [why this should produce positive risk-adjusted returns]"""
-    else:
-        prompt = f"""You are the Architect of a systematic S&P 500 trading strategy.
-Topic: {state['topic']}
-Round: {state['round']} of {state['max_rounds']}
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 3000);
+}
 
-Your previous proposal was tested with real data. Here are the backtest results:
+function setTopic(btn, topic) {
+  document.querySelectorAll('.topic-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('topic-input').value = topic;
+}
 
-{state['backtest_results']}
+function adjustRounds(delta) {
+  maxRounds = Math.max(1, Math.min(10, maxRounds + delta));
+  document.getElementById('rounds-val').textContent = maxRounds;
+}
 
-The Critic challenged your proposal with:
-{state['critic_objections']}
+function setStatus(msg) {
+  document.getElementById('status-area').innerHTML = msg ? `
+    <div class="status-bar">
+      <span class="spin"></span>
+      <span>${msg}</span>
+    </div>` : '';
+}
 
-You are a quantitative researcher reasoning from evidence.
+function renderHistory(history) {
+  const area = document.getElementById('debate-area');
+  area.innerHTML = '';
 
-The backtest data has tested your hypothesis. Now reason from what the data shows.
+  history.forEach(entry => {
+    const div = document.createElement('div');
+    const isArchitect = entry.role === "Architect";
+    const isTool = entry.role === "Indicator Tool" || entry.role === "Research Tool";
+    const isCritic = entry.role === 'Critic';
+    div.className = `round-block ${isArchitect ? 'architect-block' : isCritic ? 'critic-block' : ''}`;
 
-If the data validates your hypothesis — explain the mechanism more precisely.
-If the data rejects your hypothesis — do not simply swap to a different indicator.
-Instead, ask: what does the failure tell us about the underlying market inefficiency?
-Then derive a refined hypothesis from that understanding.
+    const badge = isTool
+      ? `<span class="badge badge-green">Indicator Tool</span>`
+      : isArchitect
+      ? '<span class="badge badge-blue">Architect</span>'
+      : isCritic
+      ? '<span class="badge badge-coral">Critic</span>'
+      : '<span class="badge badge-purple">Judge</span>';
 
-Always reason from:
-  inefficiency → mathematics → testable hypothesis → evidence
+    div.innerHTML = `
+      <div class="round-header">
+        ${badge}
+        <span>Round ${entry.round}</span>
+      </div>
+      <div class="round-body">${escHtml(entry.content)}</div>
+    `;
+    area.appendChild(div);
+  });
+}
 
-Never reason from:
-  "the data failed, let me try a different named indicator"
+function renderVerdict(result) {
+  const area = document.getElementById('debate-area');
 
-Structure your response as:
-WHAT THE DATA SHOWS: [interpret the backtest results — what do they tell us about the inefficiency]
-REFINED HYPOTHESIS: [updated mathematical formulation derived from evidence]
-RESPONSES TO OBJECTIONS: [address each challenge using theory and data together]
-POSITION: [MAINTAINED / REFINED — with the theoretical justification]"""
+  const consensusBadge = result.consensus_reached
+    ? '<span class="badge badge-green">consensus reached</span>'
+    : '<span class="badge badge-amber">no full consensus</span>';
 
-    response = llm.invoke(prompt)
-    position = response.content
+  const verdictDiv = document.createElement('div');
+  verdictDiv.className = 'judge-block round-block';
+  verdictDiv.innerHTML = `
+    <div class="round-header">
+      <span class="badge badge-purple">Judge — Final Verdict</span>
+      ${consensusBadge}
+      <span>${result.rounds_completed} round(s)</span>
+    </div>
+    <div class="round-body">${escHtml(result.final_verdict)}</div>
+  `;
+  area.appendChild(verdictDiv);
+}
 
-    new_history = state["history"] + [{
-        "role": "Architect",
-        "round": state["round"] + 1,
-        "content": position
-    }]
+function escHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+}
 
-    return {**state, "architect_position": position, "history": new_history}
+async function startDebate() {
+  const topic = document.getElementById('topic-input').value.trim();
+  const context = document.getElementById('context-input').value.trim();
 
-# ─── NODE 2 — RESEARCH TOOL (automatic) ──────────────────────────────────────
+  if (!topic) { toast('select a topic first', 'err'); return; }
 
-def run_indicator_tool(state: DebateState) -> DebateState:
-    """
-    Automatically called after every architect turn.
-    Runs indicator comparison AND walk-forward backtest.
-    Injects combined real data results for critic to use.
-    """
-    indicator_results = test_indicators_from_text(
-        architect_text=state["architect_position"],
-        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
-        start_year=2020,
-        end_year=2024
-    )
+  const btn = document.getElementById('debate-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> debating...';
 
-    walkforward_results = run_walkforward_from_text(
-        architect_text=state["architect_position"],
-        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
-        start_year=2015,
-        end_year=2024,
-        train_years=2,
-        test_years=1
-    )
+  document.getElementById('debate-area').innerHTML = '';
+  setStatus(`Starting debate · max ${maxRounds} round(s) · topic: "${topic.substring(0, 60)}..."`);
 
-    optimiser_results = run_optimisation_from_text(
-        architect_text=state["architect_position"],
-        symbols=["AAPL", "MSFT", "NVDA", "JPM", "GS"],
-        start_year=2015,
-        end_year=2024
-    )
+  try {
+    const t0 = Date.now();
+    const result = await fetch(BASE + '/run-debate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, context, max_rounds: maxRounds })
+    }).then(r => r.json());
 
-    combined = (
-        "=== INDICATOR COMPARISON (in-sample) ===\n" + indicator_results +
-        "\n\n=== WALK-FORWARD BACKTEST (out-of-sample) ===\n" + walkforward_results +
-        "\n\n=== SCORING CURVE OPTIMISATION ===\n" + optimiser_results
-    )
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    setStatus('');
 
-    new_history = state["history"] + [{
-        "role": "Research Tool",
-        "round": state["round"] + 1,
-        "content": combined
-    }]
-
-    return {
-        **state,
-        "backtest_results":    combined,
-        "walkforward_results": walkforward_results,
-        "optimiser_results":   optimiser_results,
-        "history":             new_history
+    if (result.error) {
+      toast('debate failed: ' + result.error, 'err');
+      document.getElementById('debate-area').innerHTML = `<div style="color:var(--coral);font-family:var(--mono);font-size:11px;padding:16px">${result.error}</div>`;
+    } else {
+      renderHistory(result.history);
+      renderVerdict(result);
+      toast(`✓ debate complete · ${result.rounds_completed} rounds · ${elapsed}s`);
     }
 
-# ─── NODE 3 — CRITIC ──────────────────────────────────────────────────────────
-
-def critic(state: DebateState) -> DebateState:
-    prompt = f"""You are the Critic reviewing a proposed trading strategy design decision.
-Topic: {state['topic']}
-Round: {state['round'] + 1} of {state['max_rounds']}
-
-Architect's proposal:
-{state['architect_position']}
-
-ACTUAL BACKTEST RESULTS for the proposed indicators:
-{state['backtest_results']}
-
-You are a quantitative researcher and statistician with deep scepticism.
-Your job is to stress-test the Architect's hypothesis at two levels:
-
-Level 1 — THEORY: Is the proposed market inefficiency real and well-reasoned?
-- Does the inefficiency have a credible behavioural or structural explanation?
-- Is it likely to persist or has it been arbitraged away?
-- Is the mathematical formulation a clean measure of the claimed inefficiency?
-- Or is it just a transformation of price that happens to fit recent data?
-
-Level 2 — EVIDENCE: Does the backtest data support the hypothesis?
-- Is the information coefficient meaningful or noise?
-- Is the Sharpe robust across different time windows or concentrated in one period?
-- Are there enough trades to be statistically significant?
-- Does the out-of-sample walk-forward confirm or contradict the in-sample results?
-- Are there signs of overfitting — too many parameters, too few trades, suspiciously clean results?
-
-Be intellectually honest. If the theory is sound and the data confirms it, concede.
-If either the theory or the data is weak, challenge it precisely.
-
-Structure your response as:
-THEORY CRITIQUE: [is the inefficiency real and the mathematics sound?]
-DATA ANALYSIS: [what the backtest numbers actually show]
-OBJECTIONS: [numbered — only raise objections grounded in theory or data]
-CONCESSIONS: [where the Architect is right]
-VERDICT: [CHALLENGED / PARTIALLY SATISFIED / SATISFIED]"""
-
-    response = llm.invoke(prompt)
-    objections = response.content
-
-    new_history = state["history"] + [{
-        "role": "Critic",
-        "round": state["round"] + 1,
-        "content": objections
-    }]
-
-    return {
-        **state,
-        "critic_objections": objections,
-        "history": new_history,
-        "round": state["round"] + 1
-    }
-
-# ─── NODE 4 — JUDGE ───────────────────────────────────────────────────────────
-
-def judge(state: DebateState) -> DebateState:
-    prompt = f"""You are an independent Judge evaluating a strategy design debate.
-Topic: {state['topic']}
-Rounds completed: {state['round']} of {state['max_rounds']}
-
-Full debate transcript including backtest results:
-{_format_history(state['history'])}
-
-You are an independent Judge — part quantitative researcher, part risk manager.
-
-Evaluate the debate at three levels:
-
-1. THEORY: Was the proposed market inefficiency credible and well-reasoned?
-   Is it a genuine edge or a data mining artefact?
-
-2. EVIDENCE: Does the backtest data — both in-sample and out-of-sample walk-forward —
-   confirm the hypothesis? Is the edge robust across time periods and market regimes?
-
-3. COMPLETENESS: Does this output feed into a complete trading strategy?
-   What has been validated? What remains to be tested before the Strategy Architect
-   can assemble a deployable strategy?
-
-Your verdict feeds directly into the Strategy Architect — be precise about
-what is proven, what is promising but unproven, and what should be discarded.
-
-Structure your response as:
-CONSENSUS: [YES / NO / PARTIAL]
-VALIDATED EDGE: [what market inefficiency is confirmed by theory + data]
-MATHEMATICAL FORMULATION: [the exact formula to implement — derived from the debate]
-REJECTED HYPOTHESES: [what failed and the theoretical reason why]
-FEEDS INTO STRATEGY ARCHITECT: [what this output contributes to the full strategy]
-REMAINING GAPS: [what the Strategy Architect still needs before deploying]
-CONFIDENCE: [HIGH / MEDIUM / LOW]"""
-
-    response = llm.invoke(prompt)
-    verdict = response.content
-
-    consensus = False
-    if "CONSENSUS:" in verdict.upper():
-        after = verdict.upper().split("CONSENSUS:")[1][:30]
-        consensus = "YES" in after
-
-    decision = ""
-    if "FINAL DECISION:" in verdict.upper():
-        idx = verdict.upper().find("FINAL DECISION:")
-        rest = verdict[idx + len("FINAL DECISION:"):].strip()
-        decision = rest.split("\n")[0].strip()
-
-    return {
-        **state,
-        "final_verdict": verdict,
-        "consensus_reached": consensus,
-        "decision": decision
-    }
-
-# ─── ROUTING ──────────────────────────────────────────────────────────────────
-
-def should_continue(state: DebateState) -> str:
-    if state["round"] >= state["max_rounds"]:
-        return "judge"
-    return "architect"
-
-# ─── UTILS ───────────────────────────────────────────────────────────────────
-
-def _format_history(history: List[dict]) -> str:
-    if not history:
-        return "No history yet."
-    lines = []
-    for entry in history:
-        lines.append(f"[Round {entry['round']} — {entry['role']}]")
-        lines.append(entry["content"])
-        lines.append("")
-    return "\n".join(lines)
-
-# ─── BUILD GRAPH ──────────────────────────────────────────────────────────────
-
-def build_debate_graph():
-    graph = StateGraph(DebateState)
-
-    graph.add_node("architect",           architect)
-    graph.add_node("indicator_tool",      run_indicator_tool)
-    graph.add_node("critic",              critic)
-    graph.add_node("judge",               judge)
-
-    graph.set_entry_point("architect")
-    graph.add_edge("architect",      "indicator_tool")   # tool always runs after architect
-    graph.add_edge("indicator_tool", "critic")           # critic always sees real data
-    graph.add_conditional_edges("critic", should_continue)
-    graph.add_edge("judge",          END)
-
-    return graph.compile()
-
-# ─── RUN FUNCTION ─────────────────────────────────────────────────────────────
-
-def run_debate(topic: str, context: str = "", max_rounds: int = 3) -> dict:
-    app = build_debate_graph()
-
-    initial_state: DebateState = {
-        "topic":              topic,
-        "context":            context,
-        "max_rounds":         max_rounds,
-        "round":              0,
-        "history":            [],
-        "architect_position": "",
-        "backtest_results":   "",
-        "critic_objections":  "",
-        "consensus_reached":  False,
-        "final_verdict":      "",
-        "decision":           ""
-    }
-
-    final_state = app.invoke(
-        initial_state,
-        config={"recursion_limit": 60}
-    )
-
-    return {
-        "topic":             final_state["topic"],
-        "rounds_completed":  final_state["round"],
-        "consensus_reached": final_state["consensus_reached"],
-        "final_verdict":     final_state["final_verdict"],
-        "decision":          final_state["decision"],
-        "history":           final_state["history"]
-    }
+  } catch(e) {
+    setStatus('');
+    toast('network error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⚖ start debate';
+  }
+}
+</script>
+</body>
+</html>

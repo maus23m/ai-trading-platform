@@ -135,16 +135,20 @@ function renderResults(result) {
   html += `
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-label">debates read</div>
+        <div class="stat-label">research rounds</div>
+        <div class="stat-value">${result.research_rounds || 0} / 5</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">debates total</div>
         <div class="stat-value">${result.debates_read || 0}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">backtests read</div>
-        <div class="stat-value">${result.backtests_read || 0}</div>
+        <div class="stat-label">debates fired this run</div>
+        <div class="stat-value">${(result.debates_fired || []).length}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">deployment decision</div>
-        <div class="stat-value" style="font-size:13px;color:var(--${dc==='ready'?'green':dc==='not-ready'?'amber':'blue'})">${result.deployment_decision || '—'}</div>
+        <div class="stat-label">termination</div>
+        <div class="stat-value" style="font-size:10px;color:var(--text2)">${result.termination_reason || '—'}</div>
       </div>
     </div>`;
 
@@ -202,6 +206,18 @@ function renderResults(result) {
       </div>`;
   }
 
+  // Research log
+  if (result.research_log && result.research_log.length > 0) {
+    html += `
+      <div class="section">
+        <div class="section-title">autonomous research log</div>
+        <div class="panel">
+          <div class="panel-header">what the architect did autonomously</div>
+          <div class="panel-body">${result.research_log.map(l => esc(l)).join('\n')}</div>
+        </div>
+      </div>`;
+  }
+
   // Full deployment reason
   html += `
     <div class="section">
@@ -225,10 +241,11 @@ async function runArchitect() {
   btn.innerHTML = '<span class="spin"></span> analysing all evidence...';
   document.getElementById('results-area').innerHTML = `
     <div class="empty">
-      reading all debate results from Supabase...<br>
-      synthesising evidence across all debates...<br>
-      designing complete strategy specification...<br>
-      making deployment decision...
+      round 1: reading all debate results from Supabase...<br>
+      analysing evidence · designing strategy · making decision...<br>
+      if NOT_READY: firing autonomous debates on gaps...<br>
+      re-reading · re-analysing · upgrading decision...<br>
+      <span style="color:var(--text3)">bounded to max 5 research rounds · 3 debates per round</span>
     </div>`;
 
   try {

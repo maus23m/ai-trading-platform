@@ -115,6 +115,8 @@ tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg3)}
     </div>
   </div>
   <div class="header-right">
+    <a href="/debate" style="font-family:var(--mono);font-size:11px;color:var(--text3);text-decoration:none;padding:6px 10px;border:1px solid var(--border2);border-radius:6px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">⚖ debate</a>
+    <a href="/strategy-architect" style="font-family:var(--mono);font-size:11px;color:var(--green);text-decoration:none;padding:6px 10px;border:1px solid rgba(0,200,150,0.3);border-radius:6px;background:rgba(0,200,150,0.08)" onmouseover="this.style.background='rgba(0,200,150,0.15)'" onmouseout="this.style.background='rgba(0,200,150,0.08)'">⚡ architect</a>
     <div class="rt-badge"><span class="dot" id="rt-dot"></span><span id="rt-label">realtime off</span></div>
     <div class="status-row"><span class="dot" id="status-dot"></span><span class="status-label" id="status-label">connecting...</span></div>
     <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↺ refresh</button>
@@ -206,9 +208,9 @@ tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg3)}
 
 <script>
 const BASE='https://non-sap-backend-909023162073.europe-west2.run.app';
-const SUPABASE_URL='YOUR_SUPABASE_URL';       // ← replace this
-const SUPABASE_ANON_KEY='YOUR_SUPABASE_ANON_KEY'; // ← replace this
 
+// Config is fetched from /config on load — no hardcoded secrets in this file
+let SUPABASE_URL='',SUPABASE_ANON_KEY='';
 let chartInstance=null,runsCache=[],sbClient=null;
 
 function fmt(n,d=2){return n==null?'—':Number(n).toFixed(d)}
@@ -325,8 +327,18 @@ async function placeTrade(side){
 
 async function refreshAll(){await Promise.all([checkHealth(),loadAccount(),loadRuns()]);toast('refreshed','ok')}
 
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('chart-symbol').addEventListener('keydown',e=>{if(e.key==='Enter')loadChart()});
+
+  // Fetch config from server first (reads Cloud Run env vars)
+  try{
+    const cfg=await apiFetch('/config');
+    SUPABASE_URL=cfg.supabase_url||'';
+    SUPABASE_ANON_KEY=cfg.supabase_anon_key||'';
+  }catch(e){
+    console.warn('Could not load config',e);
+  }
+
   checkHealth();loadAccount();loadRuns();initRealtime();
   setInterval(()=>{checkHealth();loadAccount()},60000);
 });

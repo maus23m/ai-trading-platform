@@ -18,6 +18,7 @@ from debate import run_debate
 from indicator_tester import test_indicators_from_text
 from backtester import run_walkforward_from_text
 from scoring_optimiser import run_optimisation_from_text
+from strategy_architect import run_strategy_architect
 
 app = FastAPI()
 
@@ -347,6 +348,23 @@ def run_optimiser(request: OptimiserRequest):
             end_year=request.end_year
         )
         return {"result": result}
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}
+
+
+# ─── STRATEGY ARCHITECT ───────────────────────────────────────────────────────
+
+@app.get("/strategy-architect", include_in_schema=False)
+def serve_strategy_architect():
+    """Serve the Strategy Architect UI."""
+    return FileResponse("strategy_architect.html", media_type="text/html")
+
+@app.post("/run-strategy-architect")
+def run_architect():
+    try:
+        result = run_strategy_architect()
+        return result
     except Exception as e:
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}

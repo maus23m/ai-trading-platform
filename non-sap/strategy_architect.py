@@ -444,3 +444,4 @@ def run_strategy_architect(
         "debates_read":         len(final_state["debate_results"]),
         "backtests_read":       len(final_state["backtest_results"])
     }
+
